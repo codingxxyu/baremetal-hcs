@@ -189,11 +189,7 @@ HCS 虚拟机 Bare Metal 另备，交给 HCS 上传为系统模板：
 | amd64 qcow2 | `kubeos:alaudaos-44.ku.202610100215-0.x86_64.qcow2` | `kubeos-202610100215-x86` |
 | arm64 qcow2 | `kubeos:alaudaos-44.ku.202610100215-0.aarch64.qcow2` | `kubeos-202610100215-arm` |
 
-启动方式必须 **UEFI**。平台「操作系统」可能显示成统信 V20，真正系统仍是这份 KubeOS。x86 模板只开 x86 虚机，ARM 模板只开 ARM 虚机。不要把已经注册过的盘再做成模板。HCS 能「用户数据注入」；CD 驱动器选不使用；软件狗关闭。模板详情若显示 Cloud-Init「不支持」，先和 HCS 确认用户数据注入仍会被虚机读到。
-
-裸金属 Bare Metal 不需要 qcow2。三台 Global BMC、三台 Workload BMC、一台 ARM BMC 都要能挂虚拟光驱。
-
-chart 的 `targetRevision` 以包文件名为准，packtool 推完后若仓库里的版本字符串不一致，以仓库 tags 为准再改 YAML。
+启动方式必须 **UEFI**。
 
 ### 1.3 对时（装机前做）
 
@@ -394,7 +390,7 @@ v1.35.6-acp.9_amd64_alaudaos.k.25: <KIND_REGISTRY_ADDRESS>:11443/tkestack/kubeos
 
 # 场景一：HCS 虚拟机 Bare Metal
 
-本场景全部是 HCS 虚机。不要 apply 任何 `01-registration-seedimage-*.yaml`。不要挂 ISO。
+HCS 虚拟机不支持挂载 ISO 启动，所以用研发提供的 qcow2 系统模板启动。不要 apply 任何 `01-registration-seedimage-*.yaml`。
 
 ---
 
@@ -402,53 +398,51 @@ v1.35.6-acp.9_amd64_alaudaos.k.25: <KIND_REGISTRY_ADDRESS>:11443/tkestack/kubeos
 
 **节点：** 引导节点。kubeconfig：`$BOOTSTRAP_KUBECONFIG`。
 
-### 5.1 `global/control-plane/01-registration-amd64.yaml`
+### 5.1 创建 Global Registration
 
-只创建 `global-registration`，**不要** apply SeedImage 那份。
+文件在包里：`global/control-plane/01-registration-amd64.yaml`。对象名 `global-registration`。不要 apply 同目录的 `01-registration-seedimage-amd64.yaml`。
 
-| 变量 | 字段 |
+先确认这两个占位符已经换成现场值：
+
+| 变量 | 写在哪 |
 |---|---|
-| `<BOOTSTRAP_HOST_IP>` | `system-uri`，写成 `<BOOTSTRAP_HOST_IP>:11443/tkestack/kubeos-rootfs:<K25_AMD64_IMAGE_TAG>` |
-| `<K25_AMD64_IMAGE_TAG>` | `system-uri` 的 tag |
+| `<BOOTSTRAP_HOST_IP>` | `spec.config.elemental.install.system-uri` 的仓库主机 |
+| `<K25_AMD64_IMAGE_TAG>` | 同一行的 tag |
 
 ```bash
+grep -nE '<[^>]+>' "$PACK_DIR/global/control-plane/01-registration-amd64.yaml"
 kubectl apply -f "$PACK_DIR/global/control-plane/01-registration-amd64.yaml"
-URL=""
-for i in $(seq 1 30); do
-  URL=$(kubectl -n cpaas-system get machineregistration global-registration \
-    -o jsonpath='{.status.registrationURL}' 2>/dev/null || true)
-  [ -n "$URL" ] && break
-  echo "waiting registrationURL ($i/30)..."
-  sleep 10
-done
+kubectl -n cpaas-system get machineregistration global-registration -o yaml
+```
+
+`-o yaml` 里找到 `status.registrationURL`，有值再 curl：
+
+```bash
+URL=$(kubectl -n cpaas-system get machineregistration global-registration \
+  -o jsonpath='{.status.registrationURL}')
 test -n "$URL"
 curl -fsSk "$URL" > /root/registration-config.yaml
 chmod 600 /root/registration-config.yaml
 ```
 
-`registrationURL` 和这份 yaml 都是凭证，不要提交。x86 虚机只用 amd64 这条 URL。
-
-复制样例，把 curl 结果原样缩进贴进 `write_files` 里 `/etc/elemental/registration/config.yaml` 的 `content: |`，公钥换成 `<SSH_AUTHORIZED_KEY>`：
+用这份结果做 cloud-init。样例在包里：`config/cloud-init-user-data.example.yaml`。
 
 ```bash
 cp "$PACK_DIR/config/cloud-init-user-data.example.yaml" /root/cloud-init-user-data.yaml
 ```
 
-粘贴后先在引导节点检查缩进，再贴到 HCS。这条命令需要 Python 的 PyYAML（`python3 -c 'import yaml'` 报错就先装 `python3-yaml` / `PyYAML`）：
+改两处，不要提交填好的文件：
 
-```bash
-python3 -c 'import yaml; yaml.safe_load(open("/root/cloud-init-user-data.yaml"))'
-```
+- `ssh_authorized_keys`：换成 `<SSH_AUTHORIZED_KEY>`（1.4 那一整行公钥）
+- `<REGISTRATION_CONFIG_YAML>`：换成 `/root/registration-config.yaml` 的全文，按样例缩进贴进 `content: |` 下面
+
+`registrationURL` 和 curl 下来的 yaml 都是凭证。三台 Global x86 虚机共用这一份。
 
 ### 5.2 三台 Global HCS 虚机
 
 **节点：** HCS 控制台。模板用 `kubeos-202610100215-x86`，启动 **UEFI**。每台虚机从干净模板新建，不要克隆已注册的盘。
 
-高级选项：
-
-- 软件狗：关闭
-- CD 驱动器：不使用
-- 用户数据注入：文本，把 `/root/cloud-init-user-data.yaml` **全文**贴进去
+高级选项：用户数据注入，文本，把 `/root/cloud-init-user-data.yaml` **全文**贴进去。
 
 三台都用 **同一份** Global amd64 的 cloud-init（同一条 `global-registration` URL）。开机后 cloud-init 跑 `elemental-register --install --no-toolkit`。网络要能访问引导节点 `:12443` 和 `:11443`。
 
@@ -477,23 +471,15 @@ sudo less /var/log/preinst-register.log
 sudo journalctl -fu elemental-system-agent
 ```
 
-### 5.3 抄 Inventory 名
+### 5.3 确认虚机是否注册成功
 
-回到引导节点：
+查看 MachineInventory，把三个实际名称填进后面的 pool：
 
 ```bash
 kubectl -n cpaas-system get machineinventory -o wide
 ```
 
-三个 inventory `Ready=True` 后，把实际名称填进 `config.local.yaml` 的：
-
-```text
-<GLOBAL_CP_INVENTORY_1>
-<GLOBAL_CP_INVENTORY_2>
-<GLOBAL_CP_INVENTORY_3>
-```
-
-三个名称必须互不相同。此时 **不要** apply `04`。
+三个名称必须互不相同，且三个 inventory `Ready=True`。
 
 ### 5.4 `global/control-plane/02-control-plane-pool.yaml`
 
@@ -863,41 +849,48 @@ kubectl get nodes
 kubectl -n cpaas-system get configmap elemental-image-catalog -o yaml
 ```
 
-### 8.1 `workload/control-plane/01-registration-amd64.yaml`
+### 8.1 创建 Workload 控制面 Registration
+
+文件在包里：`workload/control-plane/01-registration-amd64.yaml`。对象名 `hcs-workloadcluster-registration`。不要 apply 同目录的 `01-registration-seedimage-amd64.yaml`。不要复用 Global 那条 URL 或那份 cloud-init。
+
+先确认这两个占位符已经换成现场值：
+
+| 变量 | 写在哪 |
+|---|---|
+| `<PLATFORM_REGISTRY>` | `spec.config.elemental.install.system-uri` 的仓库主机，写成 `<PLATFORM_REGISTRY>:11443` |
+| `<K25_AMD64_IMAGE_TAG>` | 同一行的 tag |
 
 ```bash
+grep -nE '<[^>]+>' "$PACK_DIR/workload/control-plane/01-registration-amd64.yaml"
 kubectl apply -f "$PACK_DIR/workload/control-plane/01-registration-amd64.yaml"
-URL=""
-for i in $(seq 1 30); do
-  URL=$(kubectl -n cpaas-system get machineregistration hcs-workloadcluster-registration \
-    -o jsonpath='{.status.registrationURL}' 2>/dev/null || true)
-  [ -n "$URL" ] && break
-  sleep 10
-done
-test -n "$URL"
-curl -fsSk "$URL" > /root/registration-config-workload-cp.yaml
+kubectl -n cpaas-system get machineregistration hcs-workloadcluster-registration -o yaml
 ```
 
-cloud-init 样例和 5.1 相同，换成这一份 curl 结果。HCS 模板仍是 `kubeos-202610100215-x86`。虚机网络走 `<PLATFORM_HOST>:443` 和 `<PLATFORM_REGISTRY>:11443`，不是引导节点 `:12443`。
+`-o yaml` 里找到 `status.registrationURL`，有值再 curl：
+
+```bash
+URL=$(kubectl -n cpaas-system get machineregistration hcs-workloadcluster-registration \
+  -o jsonpath='{.status.registrationURL}')
+test -n "$URL"
+curl -fsSk "$URL" > /root/registration-config-workload-cp.yaml
+chmod 600 /root/registration-config-workload-cp.yaml
+```
+
+再从 `config/cloud-init-user-data.example.yaml` 复制一份，换成这一份 curl 结果和同一把 `<SSH_AUTHORIZED_KEY>`。HCS 模板仍是 `kubeos-202610100215-x86`。虚机网络走 `<PLATFORM_HOST>:443` 和 `<PLATFORM_REGISTRY>:11443`，不是引导节点 `:12443`。
 
 ### 8.2 三台 Workload 控制面虚机
 
 从干净 x86 模板新建，UEFI，用户数据注入贴 Workload amd64 这份 cloud-init。三台共用同一份。可选扩 `/dev/vda4`，命令与 5.2 相同。
 
-### 8.3 抄 Inventory 名
+### 8.3 确认虚机是否注册成功
+
+查看 MachineInventory，把三个实际名称填进后面的 pool：
 
 ```bash
-kubectl -n cpaas-system get machineinventory \
-  -o custom-columns='NAME:.metadata.name,READY:.status.ready'
+kubectl -n cpaas-system get machineinventory -o wide
 ```
 
-把三个互不相同的实际名称填进：
-
-```text
-<WORKLOAD_CP_INVENTORY_1>
-<WORKLOAD_CP_INVENTORY_2>
-<WORKLOAD_CP_INVENTORY_3>
-```
+三个名称必须互不相同，且三个 inventory `Ready=True`。
 
 ### 8.4 `workload/control-plane/02-control-plane-pool.yaml`
 
@@ -971,29 +964,47 @@ kubectl get machines -l cluster.x-k8s.io/cluster-name=hcs-workloadcluster -o wid
 
 不要用 amd64 的 qcow2、Registration URL 或 cloud-init。不要 apply SeedImage。
 
-### 9.1 `workload/worker/01-registration-arm64.yaml`
+### 9.1 创建 ARM Worker Registration
+
+文件在包里：`workload/worker/01-registration-arm64.yaml`。对象名 `hcs-workloadcluster-arm64-worker-registration`。不要 apply 同目录的 `01-registration-seedimage-arm64.yaml`。不要复用 amd64 的 URL 或 cloud-init。
+
+先确认这两个占位符已经换成现场值：
+
+| 变量 | 写在哪 |
+|---|---|
+| `<PLATFORM_REGISTRY>` | `spec.config.elemental.install.system-uri` 的仓库主机，写成 `<PLATFORM_REGISTRY>:11443` |
+| `<K25_ARM64_IMAGE_TAG>` | 同一行的 tag |
 
 ```bash
+grep -nE '<[^>]+>' "$PACK_DIR/workload/worker/01-registration-arm64.yaml"
 kubectl apply -f "$PACK_DIR/workload/worker/01-registration-arm64.yaml"
-URL=""
-for i in $(seq 1 30); do
-  URL=$(kubectl -n cpaas-system get machineregistration \
-    hcs-workloadcluster-arm64-worker-registration \
-    -o jsonpath='{.status.registrationURL}' 2>/dev/null || true)
-  [ -n "$URL" ] && break
-  sleep 10
-done
-test -n "$URL"
-curl -fsSk "$URL" > /root/registration-config-workload-arm.yaml
+kubectl -n cpaas-system get machineregistration hcs-workloadcluster-arm64-worker-registration -o yaml
 ```
 
-cloud-init 样例和 5.1 相同，换成这一份 curl 结果。HCS 模板用 `kubeos-202610100215-arm`，启动仍是 UEFI。
+`-o yaml` 里找到 `status.registrationURL`，有值再 curl：
+
+```bash
+URL=$(kubectl -n cpaas-system get machineregistration \
+  hcs-workloadcluster-arm64-worker-registration \
+  -o jsonpath='{.status.registrationURL}')
+test -n "$URL"
+curl -fsSk "$URL" > /root/registration-config-workload-arm.yaml
+chmod 600 /root/registration-config-workload-arm.yaml
+```
+
+再从 `config/cloud-init-user-data.example.yaml` 复制一份，换成这一份 curl 结果和同一把 `<SSH_AUTHORIZED_KEY>`。HCS 模板用 `kubeos-202610100215-arm`，启动仍是 UEFI。
 
 ### 9.2 一台 ARM 虚机
 
 从干净 ARM 模板新建。系统盘仍默认 `/dev/vda`，扩盘命令与 5.2 相同。
 
-装完后把实际 inventory 名称填进 `<WORKLOAD_ARM64_WORKER_INVENTORY>`。
+确认这台虚机是否注册成功：
+
+```bash
+kubectl -n cpaas-system get machineinventory -o wide
+```
+
+把实际名称填进后面的 pool。名称不要和已有 inventory 重复，且 `Ready=True`。
 
 ### 9.3 `workload/worker/02-worker-pool-arm64.yaml`
 
