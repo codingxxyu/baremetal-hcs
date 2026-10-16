@@ -14,4 +14,5 @@ First HCS Bare Metal delivery pack for the fixed ACP 4.4.1 single-site deploymen
 - Omits `staticPodPath` from every kubelet patch and keeps the K25 worker `volume-plugin-dir` setting.
 - Keeps `/dev/elemental-install-target` as the shared installation device.
 - Documents installer handoff, registry transitions, SeedImage gates, disk safety, and practical troubleshooting.
+- Adds a final operations chapter for installer logs, rebuild triggers, cloud-init, elemental-agent, kubelet/containerd, and cluster-transformer.
 - No scripts, renderer, commit, or push are included in this draft.

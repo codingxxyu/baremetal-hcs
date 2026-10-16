@@ -595,6 +595,63 @@ kubectl -n cpaas-system get elementalimagecatalog -o wide
 
 只有两个 catalog key 都可以解析并 Ready 后，才可以删除 Bootstrap KIND 集群 `minialauda`。
 
+### 7.3 检查并修复实际的 `elemental-image-catalog` ConfigMap
+
+`provider.imageCatalog.images` 是 Bare Metal provider 的输入配置，来源文件是 `global/control-plane/08-finished-baremetal-provider-apprelease.yaml`；但 Workload 创建时真正被读取的是 Global 集群中的运行时对象：
+
+```text
+ConfigMap/cpaas-system/elemental-image-catalog
+```
+
+因此不能只检查 AppRelease 或 `ElementalImageCatalog` 的状态。必须在 **Global 集群**实际检查 ConfigMap：
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system get configmap elemental-image-catalog -o yaml
+```
+
+`.data` 至少必须包含以下两个 ACP 4.4.1 K25 key，并且 value 必须是平台 registry 中对应架构的 **KubeOS rootfs** 镜像：
+
+```text
+v1.35.6-acp.9_amd64_alaudaos.k.25=<PLATFORM_REGISTRY>:11443/tkestack/kubeos-rootfs:<K25_AMD64_IMAGE_TAG>
+v1.35.6-acp.9_arm64_alaudaos.k.25=<PLATFORM_REGISTRY>:11443/tkestack/kubeos-rootfs:<K25_ARM64_IMAGE_TAG>
+```
+
+如果 ConfigMap 已经存在但 `.data` 为空，或缺少任意一个 key，只使用 **merge patch** 补齐 data；不要 replace 整个 ConfigMap，因为 chart 或控制器可能已经写入其他 data：如果对象本身不存在，不要直接跳过 provider Ready 检查或手工删除其他资源，应先确认 finished provider AppRelease 已成功创建该 ConfigMap。
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system patch configmap elemental-image-catalog \
+  --type merge \
+  -p "{\"data\":{\"v1.35.6-acp.9_amd64_alaudaos.k.25\":\"<PLATFORM_REGISTRY>:11443/tkestack/kubeos-rootfs:<K25_AMD64_IMAGE_TAG>\",\"v1.35.6-acp.9_arm64_alaudaos.k.25\":\"<PLATFORM_REGISTRY>:11443/tkestack/kubeos-rootfs:<K25_ARM64_IMAGE_TAG>\"}}"
+```
+
+补丁中的 `<PLATFORM_REGISTRY>`、`<K25_AMD64_IMAGE_TAG>` 和 `<K25_ARM64_IMAGE_TAG>` 必须替换成 `config/config.example.yaml` 中的实际值。补丁完成后重新读取 `.data`：
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system get configmap elemental-image-catalog \
+  -o jsonpath='{.data}'; echo
+```
+
+必须在创建以下任一 Workload 对象之前完成并确认这个检查：
+
+```text
+workload/control-plane/01-registration-seedimage-amd64.yaml
+workload/worker/01-registration-seedimage-arm64.yaml
+```
+
+如果已经因为 catalog 缺失出现 `ImageCatalogMiss`，补齐 ConfigMap 后只删除处于失败状态的对应 `BaremetalMachine`，让 MachineSet/KCP 重建它；不要删除 `Cluster`、`BaremetalCluster` 或整个 Workload 集群：
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system get baremetalmachine -o wide
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system delete baremetalmachine <FAILED_BAREMETAL_MACHINE>
+```
+
+删除前确认该对象确实是失败且可重建的 Machine，并保留其他健康 Machine 不动。
+
 ---
 
 ## 8. 创建 Workload 集群
@@ -632,10 +689,22 @@ workload/control-plane/01-registration-seedimage-amd64.yaml
 
 安装完成并 inventory Ready 后执行：
 
+先列出三台不同物理机对应的 inventory 名称；`machineInventories[].name` 必须是三个不同的 `MachineInventory` 名称，不能把同一个 UUID 名称填入两个条目：
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system get machineinventory -o custom-columns='NAME:.metadata.name,READY:.status.ready'
+```
+
+然后执行：
+
 ```bash
 kubectl apply -f "$PACK_DIR/workload/control-plane/02-control-plane-pool.yaml"
-kubectl -n cpaas-system get machineinventory -o wide
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system get machineinventory -o wide
 ```
+
+如果 API Server 返回 `spec.machineInventories[2].name: Duplicate value`，说明第三个条目复用了第一或第二个 inventory 名称；只修改 YAML 中第三个 `<WORKLOAD_CP_INVENTORY_3>`，填入第三台物理机实际的、不同的 inventory 名称后重新 apply，不要删除 Cluster。
 
 文件中替换：
 
@@ -776,3 +845,284 @@ git diff --check
 - Global KCP 为 3 副本、Workload KCP 为 3 副本、ARM Worker 为 1 副本；
 - 所有 Bare Metal rollout 的 `maxSurge` 为 `0`；
 - 本包没有备用站点、容灾资源或故障切换配置。
+
+---
+
+## 11. 运维前置检查、遗漏项和机器重建
+
+本章是部署完成前和异常恢复时的最后运维检查。前面的 YAML Apply 顺序不能替代本章的主机级检查；特别是时间同步必须在创建或重建 Machine 前完成。
+
+### 11.1 主机时间同步
+
+在所有 Global 控制面、Workload 控制面和 ARM Worker 上配置同一套现场批准的 NTP/chrony 时间源。至少确认以下结果：
+
+```bash
+date -u
+timedatectl show -p NTPSynchronized --value
+chronyc tracking
+```
+
+每台主机都必须确认：
+
+- UTC 时间与其他主机没有明显偏差；
+- `NTPSynchronized=yes`，或现场使用的时间同步服务已经报告同步成功；
+- `chronyc tracking`（如果主机使用 chrony）显示可用的同步源；
+- 时间同步服务在重启后仍会自动启动。
+
+不要只在 `kind-node` 或一台控制面上检查时间。Machine、kubelet、etcd、证书和控制器的行为依赖所有相关物理机的时间一致。
+
+### 11.2 忘记时间同步后的处理顺序
+
+如果主机已经安装并创建了 Machine，之后才发现没有做时间同步，不要直接删除整个集群。先完成所有相关物理机的时间同步，再确认同步状态，然后只处理受影响的 CAPI `Machine`：
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system get machine -o wide
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system get baremetalmachine -o wide
+```
+
+确认目标 Machine 名称、所属 Cluster 和对应节点后删除该 `Machine`：
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system delete machine <FAILED_MACHINE_NAME>
+```
+
+删除后观察控制器是否释放旧的基础设施对象并创建替代 Machine：
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system get machine,baremetalmachine -o wide \
+  -l cluster.x-k8s.io/cluster-name=<CLUSTER_NAME>
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system get machineinventory -o wide
+```
+
+确认：
+
+- 旧 Machine 已经删除；
+- 对应 BaremetalMachine 不再卡在删除状态；
+- inventory 没有被旧对象持续占用；
+- 新 Machine 能够重新进入 Provisioning/Running 流程。
+
+### 11.3 Machine 无法释放时的重建处理
+
+只有在确认旧 Machine/BaremetalMachine 长时间无法释放、控制器无法继续恢复，并且现场允许重建该 Workload 集群时，才执行下面的重建路径。先保存事件和对象 YAML：
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system describe machine <FAILED_MACHINE_NAME>
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system get machine <FAILED_MACHINE_NAME> -o yaml
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system get events --sort-by=.lastTimestamp
+```
+
+删除的是受影响 Workload 的 CAPI `Cluster`，不是 `Cluster/global`，也不是整个 Global 集群：
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system delete cluster <WORKLOAD_CLUSTER_NAME>
+```
+
+等待该 Workload Cluster 级联对象完成清理后再确认：
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system get cluster,machine,kubeadmcontrolplane,baremetalcluster -o wide
+```
+
+然后只重新 Apply 该 Workload 的声明资源，顺序如下。Registration、SeedImage 和已经正常注册的 inventory 不要因为 Cluster 重建而重复创建：
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  apply -f "$PACK_DIR/workload/control-plane/03-baremetal-cluster.yaml"
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  apply -f "$PACK_DIR/workload/control-plane/04-control-plane-machine-template.yaml"
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  apply -f "$PACK_DIR/workload/control-plane/05-cluster.yaml"
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  apply -f "$PACK_DIR/workload/control-plane/06-kubeadm-control-plane.yaml"
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  apply -f "$PACK_DIR/workload/worker/03-worker-machine-template-arm64.yaml"
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  apply -f "$PACK_DIR/workload/worker/04-worker-kubeadm-config-template-arm64.yaml"
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  apply -f "$PACK_DIR/workload/worker/05-worker-machine-deployment-arm64.yaml"
+```
+
+如果 inventory pool 也被清理，先重新确认三个 Workload amd64 inventory 和一个 ARM inventory 都是 `Ready=True`，再分别重新 Apply：
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  apply -f "$PACK_DIR/workload/control-plane/02-control-plane-pool.yaml"
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  apply -f "$PACK_DIR/workload/worker/02-worker-pool-arm64.yaml"
+```
+
+执行这一路径前必须确认这是可重建的非生产 Workload，或者已经获得现场变更批准；不要把删除 `Cluster` 当作普通的故障排查命令，也不要对 `global` Cluster 使用同样的清理方式。
+
+---
+
+## 12. 日常运维命令
+
+本章只放现场常用的查看和重建触发命令，不改变前面的 Apply 顺序。先看日志，再决定是否删除单个对象；删除 `Cluster` 是最后手段。
+
+### 12.1 在 CAN/Bootstrap 节点看 `cpaas-installer`
+
+Global 安装过程必须在 CAN/Bootstrap 节点上看，kubeconfig 仍指向 KIND `minialauda`，不要切到 `global-kubeconfig`：
+
+```bash
+kubectl --kubeconfig "$BOOTSTRAP_KUBECONFIG" \
+  -n cpaas-system get pods -l service_name=cpaas-installer -o wide
+kubectl --kubeconfig "$BOOTSTRAP_KUBECONFIG" \
+  -n cpaas-system logs -f \
+  -l service_name=cpaas-installer \
+  --all-containers=true --prefix=true
+```
+
+Installer 重启后看上一轮日志：
+
+```bash
+kubectl --kubeconfig "$BOOTSTRAP_KUBECONFIG" \
+  -n cpaas-system logs \
+  -l service_name=cpaas-installer --previous --all-containers=true
+```
+
+同时看进度接口。目标必须是 installer Pod IP 的 `8080`，不是平台 VIP：
+
+```bash
+export INSTALLER_IP=$(kubectl --kubeconfig "$BOOTSTRAP_KUBECONFIG" \
+  -n cpaas-system get pods -l service_name=cpaas-installer \
+  -o jsonpath='{.items[0].status.podIP}')
+test -n "$INSTALLER_IP"
+curl "http://${INSTALLER_IP}:8080/cpaas-installer/api/progress"
+```
+
+### 12.2 资源已经 Apply 完后如何触发重新安装
+
+资源都已经 Apply 完、但安装卡住或需要重跑时，先删除一个可以由控制器重建的对象，不要直接删 `Cluster`。常用对象：
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system get machine,baremetalmachine,kubeadmcontrolplane,machinedeployment -o wide
+```
+
+优先删除失败的 `Machine`：
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system delete machine <FAILED_MACHINE_NAME>
+```
+
+删除后观察：
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system get machine,baremetalmachine -o wide \
+  -l cluster.x-k8s.io/cluster-name=<CLUSTER_NAME>
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system get events --sort-by=.lastTimestamp | tail
+```
+
+如果旧对象能被清理、新对象能被拉起，说明控制器已经把之前那一轮安装清理掉，并开始重新安装。
+
+只有删除单个对象后长时间仍不能触发重建、并且现场允许重建该 Workload 时，才删除 Workload 的 `Cluster`：
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system delete cluster <WORKLOAD_CLUSTER_NAME>
+```
+
+删除 `Cluster` 后，必须把该 Workload 的声明资源重新 Apply 一遍。顺序与第 11.3 节相同：先等级联对象清理完成，再 Apply `03` 到 `06` 以及 ARM Worker 的 `03` 到 `05`。已经正常存在的 Registration、SeedImage 和 inventory 不要重复创建。不要删除 `Cluster/global`。
+
+### 12.3 登录物理机看 cloud-init 和 elemental-agent
+
+节点完成安装并能 SSH 登录后，先看 cloud-init 是否走完：
+
+```bash
+sudo less /var/log/cloud-init-output.log
+sudo tail -f /var/log/cloud-init-output.log
+```
+
+再看 elemental agent 是否还在继续执行后续计划：
+
+```bash
+sudo journalctl -fu elemental-system-agent
+```
+
+如果现场 unit 名称是 `elemental-agent-system`，改用：
+
+```bash
+sudo journalctl -fu elemental-agent-system
+```
+
+不确定 unit 名称时先列出：
+
+```bash
+systemctl list-units --type=service --all | grep -Ei 'elemental|cloud-init'
+```
+
+Live ISO 阶段如果还不能 SSH，可在 BMC/虚拟控制台上看：
+
+```bash
+journalctl -f | grep -Ei 'elemental|register|install|cloud-init' || true
+ls /var/log/elemental* /tmp/elemental* /var/log/cloud-init-output.log 2>/dev/null || true
+```
+
+### 12.4 节点 kubelet 和 containerd 日志
+
+节点已经加入集群但卡住时，登录该物理机执行：
+
+```bash
+sudo journalctl -fu kubelet
+sudo journalctl -fu containerd
+sudo crictl ps -a
+sudo crictl pods
+sudo crictl images
+```
+
+补充检查：
+
+```bash
+sudo systemctl status kubelet containerd
+sudo cat /var/lib/kubelet/config.yaml
+sudo ls /etc/kubernetes/manifests
+sudo ls /var/log/pods
+```
+
+kubelet patch 中不要出现 `staticPodPath`。如果节点上已经生成了带 `"staticPodPath": null` 的 patch，先改对应 KCP/KubeadmConfigTemplate YAML，再按第 12.2 节重建受影响 Machine。
+
+### 12.5 在 CAN/Bootstrap 节点看 `cluster-transformer`
+
+`cluster-transformer` 负责集群插件安装、升级和后续变更。CAN/Bootstrap 阶段看 Bootstrap 集群；handoff 完成后看 Finished Global：
+
+```bash
+kubectl --kubeconfig "$BOOTSTRAP_KUBECONFIG" \
+  -n cpaas-system get pods -l service_name=cluster-transformer -o wide
+kubectl --kubeconfig "$BOOTSTRAP_KUBECONFIG" \
+  -n cpaas-system logs -f \
+  -l service_name=cluster-transformer \
+  --all-containers=true --prefix=true
+```
+
+Finished Global 上：
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system get pods -l service_name=cluster-transformer -o wide
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system logs -f \
+  -l service_name=cluster-transformer \
+  --all-containers=true --prefix=true
+```
+
+如果对象不存在，先确认当前 kubeconfig 指向的是哪一个集群，再扩大查找：
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
+  -n cpaas-system get pods | grep -Ei 'transformer|installer'
+```
+
+不要把 `cluster-transformer` 日志和 `cpaas-installer` 日志混用：installer 看 Global 首次安装过程，transformer 看后续插件和集群变更。
