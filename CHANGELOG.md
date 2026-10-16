@@ -15,5 +15,5 @@ First HCS Bare Metal delivery pack for the fixed ACP 4.4.1 single-site deploymen
 - Keeps `/dev/elemental-install-target` as the shared installation device.
 - Documents installer handoff, registry transitions, SeedImage gates, disk safety, and practical troubleshooting.
 - Adds a final operations chapter for installer logs, rebuild triggers, cloud-init, elemental-agent, kubelet/containerd, and cluster-transformer.
-- Rewrites the README as a shorter runbook and removes pack-meta commentary.
+- Rewrites the README as a delivery handbook: Global then Workload, each step naming the YAML and the placeholders to replace.
 - No scripts, renderer, commit, or push are included in this draft.
