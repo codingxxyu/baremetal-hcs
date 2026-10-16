@@ -1,19 +1,39 @@
 #cloud-config
-# HCS qcow2 path. Copy to a gitignored file, paste curl'd registration-config.yaml
-# under write_files content, then paste the whole file into HCS 用户数据注入.
-# Do not commit the filled copy. Do not reuse a registered disk as a new template.
 users:
   - name: boot
     sudo: ALL=(ALL) NOPASSWD:ALL
     ssh_authorized_keys:
-      - <SSH_AUTHORIZED_KEY>
-
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC1GuBYZD/GMeTBblDiRcw9bhqrXkT7NqoYQyqQzFnYWtHNW8qq7oY1qIwqGlds6c1R9cim78OeuXnF96T9BkdHPlrJ1NV3/I0sm1MaGHk4tHC2FRfPCeyP9xfE1Y3d8jYqoN1TpHQVuz6rR1gB+7L1Ecv2X0n03kx461vsucxY50Nmnknd71MGV1kGJN1guay2IHc0f9BrTaRNAPKKfrf5zNNcB550cKJMQrntDUYKRA9QvnjzyqmqgIZ/b1/Thd0X7ueApF5tkKnjp59qUeNs9LCt+9/Tk7996G9K0zUM/qpWpKAQ1DZV/UgzqCO7vQlxnNbdWv3PtEwQCh5QNcPhexm2YOVRO5YDjxP8TrLaZe25aaCTHVjK2AvKNTJSJGo+bCwch5fORAkVynf4IaIiWR7TUMVqJu3VPjSoaPX5t7lzeVnSf3rVqJHbCNVFRoFqjSWYXmPBDK9ciBVyKxZSg5wIxsqUC3lg/NdXTFVSioflyjW5vcrBmOHGpxojk5k= root@ecs-19b2 
 write_files:
   - path: /etc/elemental/registration/config.yaml
     permissions: "0600"
     content: |
-      <REGISTRATION_CONFIG_YAML>
-
+      elemental:
+        registration:
+          url: https://156.3.1.26:12443/elemental/registration/x8xvwtpdzklz8z5fkrkj48fcbpv4bjlcpbp5nnqks7nx8wkq9hwf8p
+          ca-cert: |
+            -----BEGIN CERTIFICATE-----
+            MIIDDzCCAfegAwIBAgIRAKEhVnkQtjW8WXJe//Ro+kUwDQYJKoZIhvcNAQELBQAw
+            ITEfMB0GA1UEAxMWYmFyZW1ldGFsLWJvb3RzdHJhcC1jYTAeFw0yNjEwMTUwOTA5
+            MzRaFw0zNjEwMTIwOTA5MzRaMCExHzAdBgNVBAMTFmJhcmVtZXRhbC1ib290c3Ry
+            YXAtY2EwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCvirLgb+cUdh30
+            zJwHliJMxUUcjS5k9miz9zdzxeL9TSb1oaqIaAAKVOu3g62y90bE3v21fhEB8QqC
+            GM6sFMl0uFCWz/sV69nAK8e5cUbTx1iwNyGtFhkaHzlF5R4o1+9PlyiQ5qAvOAK7
+            brMQTrReHjxxD3hM8XKluD0qiZVWs5bqtjIRldfa/Y25v1DNwgMlhVY5m7G8EHSb
+            Ek43gq8RC8/EBi58y9kXv8RzehLhVPIgpEhkW9X8qWbf9ZsbnXOMartYt6cndC8N
+            HZ8xql+5V6V2LR3Ly6IZ5QpAs7/dyhAPkpq05mxdG0pFdAtp46EiFVjg1Y6lg6g1
+            ZG+M5b07AgMBAAGjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/
+            MB0GA1UdDgQWBBTVZO7TjPRxwOZ7JaO9WAqv2cs/EjANBgkqhkiG9w0BAQsFAAOC
+            AQEAIY8sd/gIUuz7UR5B02uU14sy/s9pIgc0qOJtz8MYnDA1SaoWotl+VYicOeKR
+            aou3DTgqgAtsF9JAhx+vK1clmZ51t/6Lth9cnb56rGD+v7Gzx3HPsYacQCKFZyRD
+            ctqVaIn6np7G3a0WTVExdXBT3mUqj5gNiyL6rDcRAX9zWLzvVghAhe+GMaI4jaZP
+            luUijr7yYJeCMQ8e76jTWYVQ9HvYnjg8ZGDEE1HXXwuEvgkCAtxMTeExKRF9p4f2
+            VW2gEwF/ek1SLTcHqatvfc+C9c61j00MxPp3D8Q5x2rdOch7h5rA6K2UQ8SleyYr
+            m0zvNClNuTVhXBebQ9HpvpaSFA==
+            -----END CERTIFICATE-----
+          emulate-tpm: true
+          emulated-tpm-seed: -1
+          auth: tpm
   - path: /etc/cloud/cloud.cfg.d/99-baremetal-datasource.cfg
     permissions: "0644"
     content: |
@@ -21,8 +41,10 @@ write_files:
       datasource:
         NoCloud:
           seedfrom: file:///var/lib/cloud/seed/nocloud/
-
 runcmd:
   - mkdir -p /etc/rancher/elemental/agent /var/lib/elemental/agent
-  - /usr/sbin/elemental-register --debug --install --no-toolkit --config-path /etc/elemental/registration/config.yaml --state-path /etc/elemental/registration/state.yaml > /var/log/preinst-register.log 2>&1
+  - /usr/sbin/elemental-register --debug --install --no-toolkit
+      --config-path /etc/elemental/registration/config.yaml
+      --state-path /etc/elemental/registration/state.yaml
+      > /var/log/preinst-register.log 2>&1
   - systemctl start elemental-system-agent.service elemental-register.timer elemental-storage-observer.service
