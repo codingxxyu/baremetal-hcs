@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.4-draft — 2026-10-17
+
+Splits the handbook into two field modules. YAML objects are unchanged.
+
+- Scene 1 (chapters 5–9): HCS virtual-machine Bare Metal. Registration-only files, qcow2, cloud-init. No SeedImage.
+- Scene 2 (chapters 10–14): physical Bare Metal. Registration+SeedImage, Live ISO, install-target symlink. No qcow2.
+- Chapters 1–4 stay shared. Operations move to chapter 15.
+- Removes 路径 A / 路径 B wording so a site opens only the matching module.
+
 ## 0.1.3-draft — 2026-10-17
 
 Field-handbook wording pass. YAML objects are unchanged except comments.
