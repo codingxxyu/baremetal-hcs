@@ -12,7 +12,7 @@
 #
 # Do not import SeedImage objects, MachineRegistration token Secrets,
 # Elemental plan Secrets, KubeadmConfig, or kubeadm bootstrap data Secrets.
-# This handoff imports no Secret objects or generated credentials.
+# This import list includes no Secret objects or generated credentials.
 apiVersion: v1
 kind: ConfigMap
 metadata:

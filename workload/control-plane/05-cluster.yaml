@@ -1,5 +1,5 @@
 # APPLY-ON: finished Global   kubeconfig: global-kubeconfig
-# cpaas.io/registry-address is the platform registry after Global handoff.
+# cpaas.io/registry-address is the platform registry after installer Success.
 # Do not use 127.0.0.1 or the KIND registry.
 apiVersion: cluster.x-k8s.io/v1beta1
 kind: Cluster

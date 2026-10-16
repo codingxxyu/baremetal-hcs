@@ -6,8 +6,9 @@
 #
 # Fixed single-site baseline. Do not set baremetal.cluster.io/system-agent-server-url
 # on the bootstrap MachineRegistration.
-# platformUrl and elemental.server.url stay on the bootstrap node until handoff.
-# After handoff, apply ../control-plane/08-finished-baremetal-provider-apprelease.yaml instead (platform host, no :12443).
+# platformUrl and elemental.server.url stay on the bootstrap node until installer
+# succeeds. After that, apply ../control-plane/08-finished-baremetal-provider-apprelease.yaml
+# on the finished Global (platform host, no :12443).
 apiVersion: operator.alauda.io/v1alpha1
 kind: AppRelease
 metadata:

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.3-draft — 2026-10-17
+
+Field-handbook wording pass. YAML objects are unchanged except comments.
+
+- Replaces leftover CAN / Bootstrap / Finished Global / 客机 / 运维机 / 操作机 with 引导节点、引导集群、成品 Global、虚机.
+- Adds a name table at the top of the README.
+- Fixes kubeconfig chapter mapping: extract `global-kubeconfig` in 5.8, not chapter 6.
+- NTP now covers HCS VMs as well as physical hosts.
+- Notes that the cloud-init YAML check needs PyYAML.
+- Explains the installer `dcs-` ConfigMap name and that installer does not rewrite BaremetalCluster.
+
 ## 0.1.2-draft — 2026-10-17
 
 Adds the HCS qcow2 host-join path next to the existing ISO path.

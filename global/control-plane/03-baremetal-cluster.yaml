@@ -3,7 +3,7 @@
 #
 # First apply: cpaas.io/registry-address is NODE_REGISTRY_ADDRESS <BOOTSTRAP_HOST_IP>:11443
 # (physical nodes pull OS from the bootstrap registry during first install).
-# Official installer rewrites Cluster / DCSCluster only — NOT BaremetalCluster.
+# Official installer rewrites Cluster only — NOT BaremetalCluster.
 # After installer Success, patch THIS object to REGISTRY_DOMAIN <PLATFORM_REGISTRY>:11443
 # (do not re-apply the whole file; a re-apply can wipe the live LB host).
 # spec.controlPlaneLoadBalancer.host is <GLOBAL_CONTROL_PLANE_VIP> (TCP 6443 AND the platform VIP).
