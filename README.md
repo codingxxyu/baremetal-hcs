@@ -8,7 +8,19 @@
 | Workload | 控制面 | amd64 | 3 | `workload/control-plane/` |
 | Workload | Worker | arm64 | 1 | `workload/worker/` |
 
-不部署 Global Worker。安装设备一律 `/dev/elemental-install-target`。控制面和 Worker 的 `maxSurge` 一律 `0`。Cluster / BaremetalCluster 名必须是 `global`。Workload 集群名必须是 `hcs-workloadcluster`，不能叫 `global`。
+不部署 Global Worker。控制面和 Worker 的 `maxSurge` 一律 `0`。Cluster / BaremetalCluster 名必须是 `global`。Workload 集群名必须是 `hcs-workloadcluster`，不能叫 `global`。
+
+主机怎么变成 Inventory，现场按机器类型选一种，**同一台机器不要两种都做**：
+
+| | 路径 A：同网段裸金属 | 路径 B：HCS 虚拟机 |
+|---|---|---|
+| 操作系统从哪来 | SeedImage 生成 Live ISO，往空盘安装 | 研发 qcow2 模板，HCS 当系统镜像上传 |
+| YAML | 现有 `01-registration-seedimage-*.yaml` | 新增的 `01-registration-amd64.yaml` / `01-registration-arm64.yaml`（不要 SeedImage） |
+| 闸门 | `SeedImage.status.downloadURL` | `MachineRegistration.status.registrationURL`，再 curl 配置 |
+| 启动 | BMC 挂 ISO，Live 上软链 `/dev/elemental-install-target` | HCS 用模板建虚机，高级选项「用户数据注入」贴 cloud-init |
+| 安装设备 | `/dev/elemental-install-target` | 不用软链。系统盘默认 `/dev/vda`，启动必须 **UEFI** |
+
+Inventory `Ready=True` 之后，Pool / Cluster / KCP / MD **两条路径相同**。ISO 文件全部保留；qcow2 只是多一份同名的 Registration，不要和 ISO 那份一起 apply。
 
 固定版本：
 
@@ -48,7 +60,8 @@ export PACK_DIR=/path/to/baremetal-hcs
 | 阶段 | 执行节点 | kubeconfig | 目标集群 |
 |---|---|---|---|
 | 第 2–6 章 | CAN / Bootstrap 节点 | `$BOOTSTRAP_KUBECONFIG`（第 2 章生成） | KIND `minialauda` |
-| 物理机装 OS | 对应物理机 BMC / Live ISO | 无 | 该物理机 |
+| 路径 A 装 OS | 对应物理机 BMC / Live ISO | 无 | 该物理机 |
+| 路径 B 装 OS | HCS 控制台建虚机 | 无 | 该虚机；cloud-init 在客机里跑 |
 | 第 7 章起 | CAN / 运维机 | `$GLOBAL_KUBECONFIG`（第 6 章抽出） | Finished Global |
 | 第 10 章 | 见各命令 | 见各命令 | 见各命令 |
 
@@ -72,7 +85,7 @@ grep -nE '<[^>]+>' 你准备 apply 的那个文件
 
 文件里还留着 `<...>` 就不要 apply。
 
-密码、kubeconfig、ISO、archive、Registration URL、私钥不要提交。
+密码、kubeconfig、ISO、archive、qcow2、Registration URL、`registration-config.yaml`、填好的 cloud-init、私钥不要提交。
 
 ### 0.3 仓库地址不要混
 
@@ -96,9 +109,11 @@ installer 只改写 Cluster（以及 DCSCluster）的 `cpaas.io/registry-address
 | 过了才能做 | 必须看到 |
 |---|---|
 | 跑 `setup.sh` | 引导节点规格够、Core Package 和解压目录在、HOST_IP 是整场不变的静态 IP |
-| apply Registration / SeedImage | 两个 provider Ready；catalog 有 amd64 key；默认 StorageClass 能绑 20Gi PVC |
-| 挂 ISO | `status.downloadURL` 非空 |
-| apply Pool / KCP | 三台 Inventory `Ready=True`，已离开 Live，名称互不相同；NTP 已同步 |
+| 路径 A apply Registration+SeedImage | 两个 provider Ready；catalog 有 amd64 key；默认 StorageClass 能绑 20Gi PVC |
+| 路径 A 挂 ISO | `status.downloadURL` 非空 |
+| 路径 B apply 仅 Registration | 两个 provider Ready；catalog 有对应架构 key。**不要** apply SeedImage |
+| 路径 B 建虚机 | `status.registrationURL` 非空；curl 已拿到 config；HCS 模板已是 UEFI |
+| apply Pool / KCP | 三台 Inventory `Ready=True`，名称互不相同；NTP 已同步。路径 A 还要已离开 Live |
 | apply `04` 导入清单 | KCP Ready、三台 Master Node Ready |
 | POST installer | `04` 已 apply；JSON 已校验；密码已是 base64；curl 在引导节点打 Pod IP:8080 |
 | 推镜像到平台仓库 / 拆 KIND | installer Success；handoff 三项都过；Cluster **和** BaremetalCluster 已是 `<PLATFORM_REGISTRY>:11443` |
@@ -126,7 +141,7 @@ installer 只改写 Cluster（以及 DCSCluster）的 `cpaas.io/registry-address
 | `<NETWORK_DEVICE>` | 所有 inventory pool、两个 BaremetalCluster |
 | `<GLOBAL_POD_CIDR>` `<GLOBAL_SERVICE_CIDR>` `<GLOBAL_KUBE_OVN_JOIN_CIDR>` | Global Cluster、installer JSON |
 | `<WORKLOAD_POD_CIDR>` `<WORKLOAD_SERVICE_CIDR>` `<WORKLOAD_KUBE_OVN_JOIN_CIDR>` | Workload Cluster |
-| `<SSH_AUTHORIZED_KEY>` | Global KCP、Workload KCP、ARM Worker KubeadmConfigTemplate |
+| `<SSH_AUTHORIZED_KEY>` | Global KCP、Workload KCP、ARM Worker KubeadmConfigTemplate；路径 B 的 cloud-init `boot` 用户用同一把 |
 | `<KUBEADM_PROVIDER_CHART_VERSION>` | Bootstrap / Finished Kubeadm AppRelease。从 `.ALL.` 包文件名抄 |
 | `<BAREMETAL_PROVIDER_MULTIARCH_CHART_VERSION>` | Bootstrap / Finished Bare Metal AppRelease。从 `.ALL.` 包文件名抄 |
 | `<K25_AMD64_IMAGE_TAG>` | 第 3 章导入 amd64 archive 后才能填 |
@@ -150,8 +165,12 @@ CIDR 六段必须互不重叠，也不要和管理网重叠。Join 用独立网�
 | Bare Metal provider `.ALL.` tgz | `<BAREMETAL_PROVIDER_ALL_MULTIARCH_PACKAGE>` | 同上 |
 | K25 amd64 OCI archive | `<ACP_4_4_1_K25_AMD64_ARCHIVE>` | `kubeos-rootfs` / `kubeos-iso`，本地 source tag `baremetal` |
 | K25 arm64 OCI archive | `<ACP_4_4_1_K25_ARM64_ARCHIVE>` | 第 7 章才导入。不要在 Bootstrap 阶段覆盖 amd64 |
+| 路径 B：amd64 qcow2 | `kubeos:alaudaos-44.ku.202610100215-0.x86_64.qcow2` | 给 HCS 当系统模板，平台名 `kubeos-202610100215-x86` |
+| 路径 B：arm64 qcow2 | `kubeos:alaudaos-44.ku.202610100215-0.aarch64.qcow2` | 给 HCS 当系统模板，平台名 `kubeos-202610100215-arm` |
 
 chart 的 `targetRevision` 以包文件名为准，packtool 推完后若仓库里的版本字符串不一致，以仓库 tags 为准再改 YAML。
+
+路径 B 把两份 qcow2 交给 HCS 上传为系统模板。启动方式必须 **UEFI**。平台「操作系统」可能显示成统信 V20，真正系统仍是这份 KubeOS。x86 模板只开 x86 虚机，ARM 模板只开 ARM 虚机。不要把已经注册过的盘再做成模板。
 
 ### 1.3 引导节点和现场网络
 
@@ -170,7 +189,8 @@ External VIP 先把转发建好，后端可以还没有：
 - 同一 VIP 的平台入口 `80/443` 和平台仓库 `11443` 按产品拓扑转到成品 Global
 - `<WORKLOAD_CONTROL_PLANE_VIP>:6443` TCP passthrough 到三台 Workload 控制面 `:6443`
 
-三台 Global BMC、三台 Workload BMC、一台 ARM BMC 都能挂虚拟光驱。
+路径 A：三台 Global BMC、三台 Workload BMC、一台 ARM BMC 都能挂虚拟光驱。  
+路径 B：HCS 能用对应架构模板建虚机；高级选项能「用户数据注入」；CD 驱动器选不使用；软件狗关闭。模板详情若显示 Cloud-Init「不支持」，先和 HCS 确认用户数据注入仍会被客机读到。
 
 ### 1.4 对时（装机前做）
 
@@ -234,7 +254,7 @@ kubectl -n cpaas-system get pods
 
 成功：KIND 名 `minialauda`；本机仓库 `127.0.0.1:11443`；`cpaas-installer` 在跑。默认仓库匿名时，不要造一个空的 `global-registry-auth`。
 
-SeedImage 要 20Gi PVC。KIND 起来后立刻确认有默认 StorageClass：
+路径 A 的 SeedImage 要 20Gi PVC。KIND 起来后立刻确认有默认 StorageClass（路径 B 不建 SeedImage，但仍建议确认，Workload 若改走 ISO 会用到）：
 
 ```bash
 kubectl get sc
@@ -385,9 +405,13 @@ v1.35.6-acp.9_amd64_alaudaos.k.25: <KIND_REGISTRY_ADDRESS>:11443/tkestack/kubeos
 
 ---
 
-## 5. Global：出 ISO，装三台控制面，创建 Cluster
+## 5. Global：接入三台控制面，创建 Cluster
 
-### 5.1 `global/control-plane/01-registration-seedimage-amd64.yaml`
+三台 Global 控制面必须同一条路径。A 和 B **不要**对同一台机器一起做，也不要 apply 两份 `01`（Registration 同名会冲突）。
+
+### 5.1A 路径 A：`global/control-plane/01-registration-seedimage-amd64.yaml`
+
+裸金属、能挂 ISO 时用这份。会同时创建 `global-registration` 和 SeedImage。
 
 | 变量 | 字段 |
 |---|---|
@@ -436,11 +460,49 @@ kubectl -n cpaas-system get machineregistration global-registration \
   -o jsonpath='{.status.registrationURL}{"\n"}'
 ```
 
-### 5.2 三台 Global 物理机装系统
+### 5.1B 路径 B：`global/control-plane/01-registration-amd64.yaml`
+
+HCS 虚机、不能挂 ISO 时用这份。只创建 `global-registration`，**不要** apply SeedImage 那份。
+
+| 变量 | 字段 |
+|---|---|
+| `<BOOTSTRAP_HOST_IP>` | `system-uri`，写成 `<BOOTSTRAP_HOST_IP>:11443/tkestack/kubeos-rootfs:<K25_AMD64_IMAGE_TAG>` |
+| `<K25_AMD64_IMAGE_TAG>` | `system-uri` 的 tag |
+
+```bash
+kubectl apply -f "$PACK_DIR/global/control-plane/01-registration-amd64.yaml"
+URL=""
+for i in $(seq 1 30); do
+  URL=$(kubectl -n cpaas-system get machineregistration global-registration \
+    -o jsonpath='{.status.registrationURL}' 2>/dev/null || true)
+  [ -n "$URL" ] && break
+  echo "waiting registrationURL ($i/30)..."
+  sleep 10
+done
+test -n "$URL"
+curl -fsSk "$URL" > /root/registration-config.yaml
+chmod 600 /root/registration-config.yaml
+```
+
+`registrationURL` 和这份 yaml 都是凭证，不要提交。x86 虚机只用 amd64 这条 URL。
+
+复制样例，把 curl 结果原样缩进贴进 `write_files` 里 `/etc/elemental/registration/config.yaml` 的 `content: |`，公钥换成 `<SSH_AUTHORIZED_KEY>`：
+
+```bash
+cp "$PACK_DIR/config/cloud-init-user-data.example.yaml" /root/cloud-init-user-data.yaml
+```
+
+粘贴后先在引导节点检查缩进，再贴到 HCS：
+
+```bash
+python3 -c 'import yaml,sys; yaml.safe_load(open("/root/cloud-init-user-data.yaml"))'
+```
+
+### 5.2A 路径 A：三台 Global 物理机装系统
 
 **节点：** 每台 Global 物理机 BMC / Live ISO。不用 kubectl。
 
-进 Live 前确认这三台已经对时（见 1.4）。BMC 挂上 5.1 的 ISO，从光驱启动。Live 控制台一般是 root、无密码（以现场 ISO 提示为准）。
+进 Live 前确认这三台已经对时（见 1.4）。BMC 挂上 5.1A 的 ISO，从光驱启动。Live 控制台一般是 root、无密码（以现场 ISO 提示为准）。
 
 无 DHCP 时先配静态 IP，再做软链。地址按 **这台机器** 改：
 
@@ -488,13 +550,52 @@ journalctl -f | grep -Ei 'elemental|register|install|cloud-init' || true
 
 装完：弹出虚拟光驱，BMC 改成硬盘优先，确认下次进已安装 OS。`/` 不能还是 Live。已离开 Live 的机器不要再回 Live 重建链接。
 
+### 5.2B 路径 B：三台 Global HCS 虚机
+
+**节点：** HCS 控制台。模板用 `kubeos-202610100215-x86`，启动 **UEFI**。每台虚机从干净模板新建，不要克隆已注册的盘。
+
+高级选项：
+
+- 软件狗：关闭
+- CD 驱动器：不使用
+- 用户数据注入：文本，把 `/root/cloud-init-user-data.yaml` **全文**贴进去
+
+三台都用 **同一份** Global amd64 的 cloud-init（同一条 `global-registration` URL）。开机后 cloud-init 跑 `elemental-register --install --no-toolkit`。网络要能访问引导节点 `:12443` 和 `:11443`。
+
+系统盘默认 `/dev/vda`。qcow2 约 1.8 GB，HCS 盘常见 100 GB，空间不会自动变成根分区。SSH 进去后若 `df -h /` 仍很小：
+
+```bash
+lsblk -o NAME,PATH,SIZE,TYPE,FSTYPE,MOUNTPOINTS
+findmnt -n -o SOURCE,FSTYPE,SIZE,AVAIL /
+```
+
+确认 `/` 在 `/dev/vda4`、ext4、盘尾还有空闲，再扩（不要动 vda1 EFI）：
+
+```bash
+sfdisk --dump /dev/vda > /root/vda.sfdisk.bak
+echo ", +" | sfdisk --no-reread -N 4 /dev/vda
+partx -u /dev/vda
+resize2fs /dev/vda4
+```
+
+已经顶到盘尾就跳过。分区号或文件系统不是 vda4/ext4，先改命令再跑。扩盘可以在等 Inventory 之前做。
+
+客机上看注册：
+
+```bash
+sudo less /var/log/preinst-register.log
+sudo journalctl -fu elemental-system-agent
+```
+
+### 5.2C 两条路径汇合：抄 Inventory 名
+
 回到 CAN 节点：
 
 ```bash
 kubectl -n cpaas-system get machineinventory -o wide
 ```
 
-三个 inventory `Ready=True`、已从系统盘启动后，把实际名称填进 `config.local.yaml` 的：
+三个 inventory `Ready=True` 后，把实际名称填进 `config.local.yaml` 的：
 
 ```text
 <GLOBAL_CP_INVENTORY_1>
@@ -502,7 +603,7 @@ kubectl -n cpaas-system get machineinventory -o wide
 <GLOBAL_CP_INVENTORY_3>
 ```
 
-三个名称必须互不相同。此时 **不要** apply `04`。
+三个名称必须互不相同。路径 A 还要已从系统盘启动。此时 **不要** apply `04`。
 
 ### 5.3 `global/control-plane/02-control-plane-pool.yaml`
 
@@ -877,7 +978,9 @@ kubectl -n cpaas-system get configmap elemental-image-catalog -o yaml
 
 ## 8. Workload：amd64 控制面
 
-### 8.1 `workload/control-plane/01-registration-seedimage-amd64.yaml`
+和 Global 一样，三台 Workload 控制面只选路径 A 或路径 B。不要复用 Global 的 ISO、Registration URL 或 cloud-init。
+
+### 8.1A 路径 A：`workload/control-plane/01-registration-seedimage-amd64.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -907,7 +1010,24 @@ test -n "$ISO_URL"
 
 这个 ISO 只给三台 Workload amd64 控制面。不要复用 Global ISO。
 
-### 8.2 三台 Workload 控制面物理机装系统
+### 8.1B 路径 B：`workload/control-plane/01-registration-amd64.yaml`
+
+```bash
+kubectl apply -f "$PACK_DIR/workload/control-plane/01-registration-amd64.yaml"
+URL=""
+for i in $(seq 1 30); do
+  URL=$(kubectl -n cpaas-system get machineregistration hcs-workloadcluster-registration \
+    -o jsonpath='{.status.registrationURL}' 2>/dev/null || true)
+  [ -n "$URL" ] && break
+  sleep 10
+done
+test -n "$URL"
+curl -fsSk "$URL" > /root/registration-config-workload-cp.yaml
+```
+
+cloud-init 样例和 5.1B 相同，换成这一份 curl 结果。HCS 模板仍是 `kubeos-202610100215-x86`。虚机网络走 `<PLATFORM_HOST>:443` 和 `<PLATFORM_REGISTRY>:11443`，不是引导节点 `:12443`。
+
+### 8.2A 路径 A：三台 Workload 控制面物理机
 
 **节点：** 每台 Workload amd64 控制面 BMC / Live ISO。
 
@@ -919,9 +1039,13 @@ test -n "$ISO_URL"
 <WORKLOAD_CP_3_OS_DISK_WWN>
 ```
 
-symlink、无 DHCP 配网、弹出光驱、改硬盘优先，流程与 5.2 相同。网络要能访问 `<PLATFORM_HOST>` 的 443 和 `<PLATFORM_REGISTRY>:11443`，不是引导节点 `:12443`。
+symlink、无 DHCP 配网、弹出光驱、改硬盘优先，流程与 5.2A 相同。网络要能访问 `<PLATFORM_HOST>` 的 443 和 `<PLATFORM_REGISTRY>:11443`，不是引导节点 `:12443`。
 
-装完回到 CAN：
+### 8.2B 路径 B：三台 Workload 控制面虚机
+
+流程与 5.2B 相同：x86 模板、UEFI、用户数据注入、可选扩 `/dev/vda4`。三台共用 Workload amd64 这份 cloud-init。
+
+### 8.2C 汇合：抄 Inventory 名
 
 ```bash
 kubectl -n cpaas-system get machineinventory \
@@ -1006,7 +1130,9 @@ kubectl get machines -l cluster.x-k8s.io/cluster-name=hcs-workloadcluster -o wid
 
 ## 9. Workload：arm64 Worker
 
-### 9.1 `workload/worker/01-registration-seedimage-arm64.yaml`
+这台 ARM Worker 也可以走路径 A 或路径 B。不要用 amd64 的 ISO、qcow2、Registration URL 或 cloud-init。
+
+### 9.1A 路径 A：`workload/worker/01-registration-seedimage-arm64.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -1037,11 +1163,35 @@ done
 test -n "$ISO_URL"
 ```
 
-### 9.2 ARM 物理机装系统
+### 9.1B 路径 B：`workload/worker/01-registration-arm64.yaml`
+
+```bash
+kubectl apply -f "$PACK_DIR/workload/worker/01-registration-arm64.yaml"
+URL=""
+for i in $(seq 1 30); do
+  URL=$(kubectl -n cpaas-system get machineregistration \
+    hcs-workloadcluster-arm64-worker-registration \
+    -o jsonpath='{.status.registrationURL}' 2>/dev/null || true)
+  [ -n "$URL" ] && break
+  sleep 10
+done
+test -n "$URL"
+curl -fsSk "$URL" > /root/registration-config-workload-arm.yaml
+```
+
+cloud-init 样例和 5.1B 相同，换成这一份 curl 结果。HCS 模板用 `kubeos-202610100215-arm`，启动仍是 UEFI。
+
+### 9.2A 路径 A：ARM 物理机
 
 **节点：** 那一台 ARM Worker BMC / Live ISO。
 
-进 Live 前对时。WWN 对照 `<WORKLOAD_ARM64_WORKER_1_OS_DISK_WWN>`。symlink 和配网流程与 5.2 相同。
+进 Live 前对时。WWN 对照 `<WORKLOAD_ARM64_WORKER_1_OS_DISK_WWN>`。symlink 和配网流程与 5.2A 相同。
+
+### 9.2B 路径 B：ARM 虚机
+
+流程与 5.2B 相同，模板换成 ARM 那份。系统盘仍默认 `/dev/vda`，扩盘命令相同。
+
+### 9.2C 汇合
 
 装完后把实际 inventory 名称填进 `<WORKLOAD_ARM64_WORKER_INVENTORY>`。
 
@@ -1178,7 +1328,19 @@ workload/worker/05-worker-machine-deployment-arm64.yaml
 
 pool 也被清掉时，先确认 inventory Ready，再 apply 两个 `02`。已经存在的 Registration / SeedImage / inventory 不要重复创建。不要删 `Cluster/global`。
 
-### 10.4 登录机器看 cloud-init / elemental-agent
+### 10.4 路径 B：虚机注册日志和扩盘
+
+客机上看：
+
+```bash
+sudo less /var/log/cloud-init-output.log
+sudo less /var/log/preinst-register.log
+sudo journalctl -fu elemental-system-agent
+```
+
+根分区没自动变大时，先 `lsblk` / `findmnt` 确认 `/` 在 `/dev/vda4` 且是 ext4，再按 5.2B 扩盘。不要扩 EFI 分区。
+
+### 10.5 登录机器看 cloud-init / elemental-agent
 
 ```bash
 sudo less /var/log/cloud-init-output.log
@@ -1203,7 +1365,7 @@ Live ISO 还不能 SSH 时，在 BMC 上看：
 journalctl -f | grep -Ei 'elemental|register|install|cloud-init' || true
 ```
 
-### 10.5 kubelet / containerd
+### 10.6 kubelet / containerd
 
 ```bash
 sudo journalctl -fu kubelet
@@ -1212,9 +1374,9 @@ sudo crictl ps -a
 sudo systemctl status kubelet containerd
 ```
 
-节点上如果已经出现 `"staticPodPath": null`，先改对应 YAML，再按 10.3 重建那台 Machine。
+节点上如果已经出现 `"staticPodPath": null`，先改对应 YAML，再按 10.3 重建那台 Machine。路径 B 重建时从干净 qcow2 模板再开一台，贴同一角色的 cloud-init，不要克隆已注册磁盘。
 
-### 10.6 CAN 上看 cluster-transformer
+### 10.7 CAN 上看 cluster-transformer
 
 Bootstrap：
 

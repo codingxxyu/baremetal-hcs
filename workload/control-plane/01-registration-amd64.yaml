@@ -1,0 +1,33 @@
+# APPLY-ON: finished Global   kubeconfig: global-kubeconfig
+# HCS qcow2 path only. Do not apply together with 01-registration-seedimage-amd64.yaml.
+# Same MachineRegistration name as the ISO file: hcs-workloadcluster-registration.
+# No SeedImage. Gate is status.registrationURL, then curl the config into cloud-init.
+apiVersion: elemental.cattle.io/v1beta1
+kind: MachineRegistration
+metadata:
+  name: hcs-workloadcluster-registration
+  namespace: cpaas-system
+  labels:
+    app.kubernetes.io/part-of: cluster-api-provider-baremetal
+    cpaas.io/cluster-name: hcs-workloadcluster
+spec:
+  machineName: "hcs-workloadcluster-${System Information/UUID}"
+  machineInventoryLabels:
+    app.kubernetes.io/part-of: cluster-api-provider-baremetal
+    pool.baremetal.alauda.io/eligible: "true"
+    elemental.cattle.io/serial-number: "${System Information/Serial Number}"
+    cpaas.io/cluster-name: hcs-workloadcluster
+    os.baremetal.alauda.io/id: alaudaos.k.25
+    os.baremetal.alauda.io/arch: "${Runtime/Architecture}"
+  machineInventoryAnnotations:
+    elemental.cattle.io/machine-uuid: "${System Information/UUID}"
+  config:
+    elemental:
+      install:
+        device: /dev/elemental-install-target
+        system-uri: <PLATFORM_REGISTRY>:11443/tkestack/kubeos-rootfs:<K25_AMD64_IMAGE_TAG>
+        eject-cd: true
+        reboot: true
+      registration:
+        emulate-tpm: true
+        emulated-tpm-seed: -1

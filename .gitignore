@@ -11,6 +11,8 @@ config/*local*.yaml
 config/*local*.json
 installer-config.json
 registration-url.txt
+registration-config.yaml
+cloud-init-user-data.yaml
 *.tar
 *.tgz
 *.sha256

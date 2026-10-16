@@ -48,6 +48,12 @@ release:
     arm64_image_tag: <K25_ARM64_IMAGE_TAG>
     arm64_sha256: <K25_ARM64_ARCHIVE_SHA256>
     arm64_catalog_key: v1.35.6-acp.9_arm64_alaudaos.k.25
+    qcow2_amd64_file: kubeos:alaudaos-44.ku.202610100215-0.x86_64.qcow2
+    qcow2_amd64_template: kubeos-202610100215-x86
+    qcow2_arm64_file: kubeos:alaudaos-44.ku.202610100215-0.aarch64.qcow2
+    qcow2_arm64_template: kubeos-202610100215-arm
+    qcow2_boot: UEFI
+    qcow2_system_disk: /dev/vda
 
 bootstrap:
   host_ip: <BOOTSTRAP_HOST_IP>

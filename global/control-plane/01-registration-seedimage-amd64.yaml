@@ -1,4 +1,6 @@
 # APPLY-ON: bootstrap (minialauda)
+# ISO / bare-metal path. Do not apply together with 01-registration-amd64.yaml
+# (same MachineRegistration name: global-registration).
 # Apply on the bootstrap cluster AFTER the Bare Metal provider is Ready
 # and elemental-image-catalog contains v1.35.6-acp.9_amd64_alaudaos.k.25.
 # This ISO belongs to bootstrap. Do not reuse it after handoff.

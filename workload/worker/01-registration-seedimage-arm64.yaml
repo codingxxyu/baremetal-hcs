@@ -1,4 +1,6 @@
 # APPLY-ON: finished Global   kubeconfig: global-kubeconfig
+# ISO / bare-metal path. Do not apply together with 01-registration-arm64.yaml
+# (same MachineRegistration name: hcs-workloadcluster-arm64-worker-registration).
 # Apply on the finished Global. Do not reuse the workload control-plane ISO.
 # Gate: status.downloadURL non-empty. spec.size 20Gi needs default StorageClass on Global.
 apiVersion: elemental.cattle.io/v1beta1

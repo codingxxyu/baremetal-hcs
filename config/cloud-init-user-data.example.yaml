@@ -1,0 +1,28 @@
+#cloud-config
+# HCS qcow2 path. Copy to a gitignored file, paste curl'd registration-config.yaml
+# under write_files content, then paste the whole file into HCS 用户数据注入.
+# Do not commit the filled copy. Do not reuse a registered disk as a new template.
+users:
+  - name: boot
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - <SSH_AUTHORIZED_KEY>
+
+write_files:
+  - path: /etc/elemental/registration/config.yaml
+    permissions: "0600"
+    content: |
+      <REGISTRATION_CONFIG_YAML>
+
+  - path: /etc/cloud/cloud.cfg.d/99-baremetal-datasource.cfg
+    permissions: "0644"
+    content: |
+      datasource_list: [ NoCloud ]
+      datasource:
+        NoCloud:
+          seedfrom: file:///var/lib/cloud/seed/nocloud/
+
+runcmd:
+  - mkdir -p /etc/rancher/elemental/agent /var/lib/elemental/agent
+  - /usr/sbin/elemental-register --debug --install --no-toolkit --config-path /etc/elemental/registration/config.yaml --state-path /etc/elemental/registration/state.yaml > /var/log/preinst-register.log 2>&1
+  - systemctl start elemental-system-agent.service elemental-register.timer elemental-storage-observer.service

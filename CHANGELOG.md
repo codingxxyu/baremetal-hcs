@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.2-draft — 2026-10-17
+
+Adds the HCS qcow2 host-join path next to the existing ISO path.
+
+- Keeps every ISO `01-registration-seedimage-*.yaml` file unchanged.
+- Adds architecture-named Registration-only files for VMs that cannot mount ISO: `global/control-plane/01-registration-amd64.yaml`, `workload/control-plane/01-registration-amd64.yaml`, `workload/worker/01-registration-arm64.yaml`.
+- Adds `config/cloud-init-user-data.example.yaml` for HCS 用户数据注入.
+- Documents two host-join methods in the README; Pool / Cluster / KCP stay the same after Inventory is Ready.
+- Records the two KubeOS qcow2 templates (UEFI, `/dev/vda`) and the optional vda4 expand commands.
+
 ## 0.1.1-draft — 2026-10-17
 
 Field-delivery rewrite of the README. YAML-only pack is unchanged.
