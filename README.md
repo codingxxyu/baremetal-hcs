@@ -8,7 +8,7 @@
 | Workload | 控制面 | amd64 | 3 | `workload/control-plane/` |
 | Workload | Worker | arm64 | 1 | `workload/worker/` |
 
-不部署 Global Worker。安装设备一律 `/dev/elemental-install-target`。控制面和 Worker 的 `maxSurge` 一律 `0`。
+不部署 Global Worker。安装设备一律 `/dev/elemental-install-target`。控制面和 Worker 的 `maxSurge` 一律 `0`。Cluster / BaremetalCluster 名必须是 `global`。Workload 集群名必须是 `hcs-workloadcluster`，不能叫 `global`。
 
 固定版本：
 
@@ -33,26 +33,24 @@ v1.35.6-acp.9_amd64_alaudaos.k.25
 v1.35.6-acp.9_arm64_alaudaos.k.25
 ```
 
-`baremetal` 只是 archive 导入后的本地 source tag。YAML 里必须写成实际最终 tag：`<K25_AMD64_IMAGE_TAG>`、`<K25_ARM64_IMAGE_TAG>`。
+`baremetal` 只是 archive 导入后的本地 source tag。YAML 里必须写成 archive 导入后读到的最终 tag：`<K25_AMD64_IMAGE_TAG>`、`<K25_ARM64_IMAGE_TAG>`。不要猜 ARM 后缀。
 
 kubelet patch 不要写 `staticPodPath`，包括 `null`。
 
 ### 0.1 执行位置和 kubeconfig
 
-先设变量：
+第 2 章跑完 `setup.sh` 之后，Bootstrap kubeconfig 才存在。第 6 章 KCP Ready 之后，才能从 Secret 抽出 `global-kubeconfig`。进场时先只设包目录：
 
 ```bash
 export PACK_DIR=/path/to/baremetal-hcs
-export BOOTSTRAP_KUBECONFIG=/path/to/bootstrap-kubeconfig
-export GLOBAL_KUBECONFIG=/path/to/global-kubeconfig
 ```
 
 | 阶段 | 执行节点 | kubeconfig | 目标集群 |
 |---|---|---|---|
-| 第 2–5 章 | CAN / Bootstrap 节点 | `$BOOTSTRAP_KUBECONFIG` | KIND `minialauda` |
+| 第 2–6 章 | CAN / Bootstrap 节点 | `$BOOTSTRAP_KUBECONFIG`（第 2 章生成） | KIND `minialauda` |
 | 物理机装 OS | 对应物理机 BMC / Live ISO | 无 | 该物理机 |
-| 第 6 章起 | CAN / 运维机 | `$GLOBAL_KUBECONFIG` | Finished Global |
-| 第 9 章 | 见各命令 | 见各命令 | 见各命令 |
+| 第 7 章起 | CAN / 运维机 | `$GLOBAL_KUBECONFIG`（第 6 章抽出） | Finished Global |
+| 第 10 章 | 见各命令 | 见各命令 | 见各命令 |
 
 ### 0.2 对照文件
 
@@ -62,19 +60,58 @@ export GLOBAL_KUBECONFIG=/path/to/global-kubeconfig
 config/config.example.yaml
 ```
 
-本地复制：
-
 ```bash
 cp "$PACK_DIR/config/config.example.yaml" "$PACK_DIR/config/config.local.yaml"
 ```
 
-后续每一步列出的变量，都从 `config.local.yaml` 取实际值，手工替换到该步 YAML / JSON。改对照文件不会自动改 manifests。
+每一步列出的变量，都从 `config.local.yaml` 取实际值，手工替换到该步 YAML / JSON。改对照文件不会自动改 manifests。apply 前检查目标文件：
+
+```bash
+grep -nE '<[^>]+>' 你准备 apply 的那个文件
+```
+
+文件里还留着 `<...>` 就不要 apply。
 
 密码、kubeconfig、ISO、archive、Registration URL、私钥不要提交。
 
+### 0.3 仓库地址不要混
+
+注解和 `repoURL` 只写 `<host>:11443`，不要加 `/v2/`。四套地址各干一件事：
+
+| 地址 | 谁用 | 寿命 |
+|---|---|---|
+| `127.0.0.1:11443` | 引导节点本机 `packtool` / `ctr push` | 引导期。KIND 拆掉即死 |
+| `<KIND_REGISTRY_ADDRESS>:11443` | KIND 里 AppRelease `repoURL`、Global SeedImage `baseImage`。常见是 `172.18.0.1:11443` | 引导期。KIND 拆掉即死 |
+| `<BOOTSTRAP_HOST_IP>:11443` | Global 首次 Cluster / BaremetalCluster 的 `cpaas.io/registry-address`；物理机装 OS 时拉 rootfs | 引导期。installer 之后应变为平台仓库 |
+| `<PLATFORM_REGISTRY>:11443` | installer JSON `registry.domain`；Finished provider；Workload 全部仓库 | 永久 |
+
+不要把 `127.0.0.1` 或 `<KIND_REGISTRY_ADDRESS>` 写进 Cluster / BaremetalCluster。物理机到不了 KIND 网桥。
+
+installer 只改写 Cluster（以及 DCSCluster）的 `cpaas.io/registry-address`。**不改写 BaremetalCluster**。交接后必须 patch，见 7.1。
+
+### 0.4 闸门
+
+不要凭「差不多了」往下走。
+
+| 过了才能做 | 必须看到 |
+|---|---|
+| 跑 `setup.sh` | 引导节点规格够、Core Package 和解压目录在、HOST_IP 是整场不变的静态 IP |
+| apply Registration / SeedImage | 两个 provider Ready；catalog 有 amd64 key；默认 StorageClass 能绑 20Gi PVC |
+| 挂 ISO | `status.downloadURL` 非空 |
+| apply Pool / KCP | 三台 Inventory `Ready=True`，已离开 Live，名称互不相同；NTP 已同步 |
+| apply `04` 导入清单 | KCP Ready、三台 Master Node Ready |
+| POST installer | `04` 已 apply；JSON 已校验；密码已是 base64；curl 在引导节点打 Pod IP:8080 |
+| 推镜像到平台仓库 / 拆 KIND | installer Success；handoff 三项都过；Cluster **和** BaremetalCluster 已是 `<PLATFORM_REGISTRY>:11443` |
+| apply Finished provider | 平台仓库已有 amd64+arm64 OS 和两个 chart |
+| apply Workload | Finished catalog CM 两个 key 都对；Global 上有默认 StorageClass |
+
 ---
 
-## 1. 开始前必须填好的值
+## 1. 进场：填值、包、网络、对时
+
+**节点：** CAN / Bootstrap。还没有 kubeconfig。
+
+### 1.1 填对照文件
 
 先把 `config.local.yaml` 填完，再改 YAML。现场核对盘符 WWN 时用 `hosts`，这些 WWN 不写入共享 YAML。
 
@@ -83,66 +120,193 @@ cp "$PACK_DIR/config/config.example.yaml" "$PACK_DIR/config/config.local.yaml"
 | `<BOOTSTRAP_HOST_IP>` | Bootstrap TLS、Bootstrap provider、Global Registration rootfs、Global 首次 Cluster/BaremetalCluster、Global KCP etcd SAN、installer `hostIP` |
 | `<KIND_REGISTRY_ADDRESS>` | Bootstrap AppRelease `repoURL` / registry、Global SeedImage `baseImage` |
 | `<PLATFORM_HOST>` | Finished provider、installer console |
-| `<PLATFORM_REGISTRY>` | 推镜像、installer registry、Finished provider、Workload 全部 registry |
+| `<PLATFORM_REGISTRY>` | installer registry、Finished provider、Workload 全部 registry。第 7 章才往这里推 |
 | `<GLOBAL_CONTROL_PLANE_VIP>` | Bootstrap Bare Metal provider、Global BaremetalCluster、Global KCP etcd SAN、installer `features.ha.vip` |
 | `<WORKLOAD_CONTROL_PLANE_VIP>` | Workload BaremetalCluster、Workload KCP etcd SAN |
 | `<NETWORK_DEVICE>` | 所有 inventory pool、两个 BaremetalCluster |
 | `<GLOBAL_POD_CIDR>` `<GLOBAL_SERVICE_CIDR>` `<GLOBAL_KUBE_OVN_JOIN_CIDR>` | Global Cluster、installer JSON |
 | `<WORKLOAD_POD_CIDR>` `<WORKLOAD_SERVICE_CIDR>` `<WORKLOAD_KUBE_OVN_JOIN_CIDR>` | Workload Cluster |
 | `<SSH_AUTHORIZED_KEY>` | Global KCP、Workload KCP、ARM Worker KubeadmConfigTemplate |
-| `<KUBEADM_PROVIDER_CHART_VERSION>` | Bootstrap / Finished Kubeadm AppRelease |
-| `<BAREMETAL_PROVIDER_MULTIARCH_CHART_VERSION>` | Bootstrap / Finished Bare Metal AppRelease |
-| `<K25_AMD64_IMAGE_TAG>` | amd64 catalog、amd64 Registration/SeedImage |
-| `<K25_ARM64_IMAGE_TAG>` | arm64 catalog、arm64 Registration/SeedImage |
+| `<KUBEADM_PROVIDER_CHART_VERSION>` | Bootstrap / Finished Kubeadm AppRelease。从 `.ALL.` 包文件名抄 |
+| `<BAREMETAL_PROVIDER_MULTIARCH_CHART_VERSION>` | Bootstrap / Finished Bare Metal AppRelease。从 `.ALL.` 包文件名抄 |
+| `<K25_AMD64_IMAGE_TAG>` | 第 3 章导入 amd64 archive 后才能填 |
+| `<K25_ARM64_IMAGE_TAG>` | 第 7 章导入 arm64 archive 后才能填 |
 | `<GLOBAL_CP_INVENTORY_1/2/3>` | Global pool、DCS import。装完机后再填实际名称 |
 | `<WORKLOAD_CP_INVENTORY_1/2/3>` | Workload 控制面 pool。装完机后再填实际名称 |
 | `<WORKLOAD_ARM64_WORKER_INVENTORY>` | ARM Worker pool。装完机后再填实际名称 |
-| `Registry` / `<BASE64_REGISTRY_PASSWORD>` | 推镜像、installer JSON |
+| `Registry` / `<BASE64_REGISTRY_PASSWORD>` | installer JSON 的仓库账号。用户名必须是 `Registry`，不是 `admin` |
 | `admin@cpaas.io` / `<BASE64_PLATFORM_ADMIN_PASSWORD>` | installer JSON 的平台账号，不是仓库账号 |
+
+CIDR 六段必须互不重叠，也不要和管理网重叠。Join 用独立网段，不要写成 Pod/Service 的子集。
+
+### 1.2 需要准备的包
+
+从 Customer Portal 取 **同一套 ACP 4.4.1** 产物，放到引导节点（常见 `/root`）。压缩包不进 git。
+
+| 包 | 对照字段 | 用途 |
+|---|---|---|
+| Core Package | `<ACP_4_4_1_HYBRID_CORE_PACKAGE>` | `setup.sh` 起 KIND `minialauda` + 嵌入式仓库 + `cpaas-installer` |
+| kubeadm provider `.ALL.` tgz | `<KUBEADM_PROVIDER_ALL_PACKAGE>` | packtool 推进引导仓库，再在第 7 章推进平台仓库 |
+| Bare Metal provider `.ALL.` tgz | `<BAREMETAL_PROVIDER_ALL_MULTIARCH_PACKAGE>` | 同上 |
+| K25 amd64 OCI archive | `<ACP_4_4_1_K25_AMD64_ARCHIVE>` | `kubeos-rootfs` / `kubeos-iso`，本地 source tag `baremetal` |
+| K25 arm64 OCI archive | `<ACP_4_4_1_K25_ARM64_ARCHIVE>` | 第 7 章才导入。不要在 Bootstrap 阶段覆盖 amd64 |
+
+chart 的 `targetRevision` 以包文件名为准，packtool 推完后若仓库里的版本字符串不一致，以仓库 tags 为准再改 YAML。
+
+### 1.3 引导节点和现场网络
+
+引导节点：传统 OS（不是 Alauda OS），静态 IP 整场不能变，必须等于后面 YAML 里的 `<BOOTSTRAP_HOST_IP>`。官方下限 x86_64 **8 核 / 16 GB / 磁盘 ≥ 300 GB**（解压目录 + `/var/cpaas` + `/var/lib/containerd`）。引导节点本身不要求 x86-64-v2；**Alauda OS 物理机**要求 x86-64-v2。ARM Worker 按现场 ARM 规格。
+
+```bash
+hostname -I
+free -h
+df -h / /var /var/cpaas /var/lib/containerd /root
+ls -lh /root/*.tar /root/*.tgz
+```
+
+External VIP 先把转发建好，后端可以还没有：
+
+- `<GLOBAL_CONTROL_PLANE_VIP>:6443` TCP passthrough 到三台 Global 控制面 `:6443`
+- 同一 VIP 的平台入口 `80/443` 和平台仓库 `11443` 按产品拓扑转到成品 Global
+- `<WORKLOAD_CONTROL_PLANE_VIP>:6443` TCP passthrough 到三台 Workload 控制面 `:6443`
+
+三台 Global BMC、三台 Workload BMC、一台 ARM BMC 都能挂虚拟光驱。
+
+### 1.4 对时（装机前做）
+
+所有即将安装的物理机，在进 Live ISO **之前**从 BMC/firmware 把时钟校好，彼此相差不超过 10 秒。漏做了对时再装机会卡 Machine，处理办法见第 10 章。
+
+### 1.5 SSH 公钥和 installer 密码
+
+```bash
+test -f ~/.ssh/id_ed25519.pub || ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_ed25519
+cat ~/.ssh/id_ed25519.pub
+```
+
+把这一整行填进 `<SSH_AUTHORIZED_KEY>`。私钥不要放进仓库。
+
+installer JSON 的两个 password 字段必须是 **base64 编码后的字符串**，不是明文：
+
+```bash
+printf 'platform admin password: ' && read -rs PLAIN && echo
+printf '%s' "$PLAIN" | base64 | tr -d '\n'; echo
+# 填进 <BASE64_PLATFORM_ADMIN_PASSWORD>
+
+printf 'registry password: ' && read -rs REGPLAIN && echo
+printf '%s' "$REGPLAIN" | base64 | tr -d '\n'; echo
+# 填进 <BASE64_REGISTRY_PASSWORD>
+# 明文自己另存，第 3 / 7 章 ctr push 要用；不要提交
+```
+
+仓库用户名固定 `Registry`。平台用户名固定 `admin@cpaas.io`。
 
 ---
 
-## 2. 推 KubeOS 镜像
+## 2. Core Package 起 minialauda
 
 **节点：** CAN / Bootstrap。
 
-按现场策略配置仓库证书信任，不要关 TLS 校验。
-
-先推 amd64：
+把 Core Package 解到引导节点。本手册按 `/root/installer/setup.sh` 写；现场目录不同就改路径。
 
 ```bash
-export OS_ARCHIVE=<ACP_4_4_1_K25_AMD64_ARCHIVE>
+test -x /root/installer/setup.sh
+ls /root/installer/res/amd64/kind /root/installer/res/amd64/packtool /root/installer/res/amd64/nerdctl
+cd /root/installer
+bash setup.sh
+```
+
+`setup.sh` 会问引导节点 IP、仓库是否设密码。**HOST_IP 必须是 `<BOOTSTRAP_HOST_IP>`**，整场不要改。脚本跑完才有 kubeconfig。
+
+```bash
+mkdir -p "${HOME}/.local/bin" ~/.kube
+if ! command -v kubectl >/dev/null 2>&1; then
+  export PATH="/root/installer/res/amd64:${PATH}"
+  nerdctl cp minialauda-control-plane:/usr/bin/kubectl "${HOME}/.local/bin/kubectl"
+  chmod 0755 "${HOME}/.local/bin/kubectl"
+  export PATH="${HOME}/.local/bin:${PATH}"
+fi
+cp /var/cpaas/data/alauda.kubeconfig ~/.kube/config
+export BOOTSTRAP_KUBECONFIG=~/.kube/config
+export KUBECONFIG="$BOOTSTRAP_KUBECONFIG"
+kubectl get nodes
+kubectl -n cpaas-system get pods
+```
+
+成功：KIND 名 `minialauda`；本机仓库 `127.0.0.1:11443`；`cpaas-installer` 在跑。默认仓库匿名时，不要造一个空的 `global-registry-auth`。
+
+SeedImage 要 20Gi PVC。KIND 起来后立刻确认有默认 StorageClass：
+
+```bash
+kubectl get sc
+kubectl get sc -o jsonpath='{range .items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")]}{.metadata.name}{"\n"}{end}'
+```
+
+必须打出至少一个名字。空 = ISO 永远没有 `downloadURL`。
+
+`nerdctl` 不在 PATH 时：
+
+```bash
+export PATH="/root/installer/res/amd64:${PATH}"
+command -v nerdctl || command -v docker
+nerdctl ps --format '{{.Names}}' | grep minialauda || docker ps --format '{{.Names}}' | grep minialauda
+```
+
+---
+
+## 3. 推 chart 和 amd64 OS 到引导仓库
+
+**节点：** CAN / Bootstrap。kubeconfig：`$BOOTSTRAP_KUBECONFIG`。
+
+这一步只打本机 `127.0.0.1:11443`。不要打 `<KIND_REGISTRY_ADDRESS>`，也不要打 `<PLATFORM_REGISTRY>`。平台仓库此时还不存在。
+
+### 3.1 packtool 推两个 provider chart
+
+```bash
+PACKTOOL=/root/installer/res/amd64/packtool
+test -x "$PACKTOOL"
+$PACKTOOL pack push -h
+$PACKTOOL pack push -r "127.0.0.1:11443" -c /root/<KUBEADM_PROVIDER_ALL_PACKAGE>
+$PACKTOOL pack push -r "127.0.0.1:11443" -c /root/<BAREMETAL_PROVIDER_ALL_MULTIARCH_PACKAGE>
+```
+
+先看 help，不要假设认证开关叫 `-u`。引导仓库默认匿名。`setup.sh` 给仓库设了账号时，按 help 里的认证参数再推。
+
+### 3.2 导入 amd64 KubeOS，读最终 tag，推进引导仓库
+
+`/var/lib/containerd` 至少要有归档那么大的空闲。不要先 `ctr images rm`：交接后还要从同一个 namespace 再推到平台仓库。
+
+```bash
+command -v ctr
+ctr namespaces ls || true
+ctr namespaces create bare-metal-os 2>/dev/null || true
+ctr -n bare-metal-os images import --all-platforms --no-unpack /root/<ACP_4_4_1_K25_AMD64_ARCHIVE>
+ctr -n bare-metal-os images ls -q
+```
+
+必须看到本地 source：
+
+```text
+kubeos-rootfs:baremetal
+kubeos-iso:baremetal
+```
+
+最终 tag 以这次 `images ls` 和现场 archive 说明为准，填进 `config.local.yaml` 的 `<K25_AMD64_IMAGE_TAG>`，再替换 YAML。不要把 `baremetal` 写进 YAML。
+
+```bash
 export OS_TAG=<K25_AMD64_IMAGE_TAG>
-export REGISTRY=<PLATFORM_REGISTRY>:11443
-
-ctr -n bare-metal-os images rm \
-  kubeos-rootfs:baremetal kubeos-iso:baremetal 2>/dev/null || true
-ctr -n bare-metal-os images import --all-platforms --no-unpack "$OS_ARCHIVE"
-ctr -n bare-metal-os images ls -q | grep -E 'kubeos-(rootfs|iso):baremetal$'
-
 for repo in kubeos-rootfs kubeos-iso; do
-  ctr -n bare-metal-os images push \
-    -u 'Registry:<REGISTRY_PASSWORD>' \
-    "$REGISTRY/tkestack/$repo:$OS_TAG" \
-    "$repo:baremetal"
+  ctr -n bare-metal-os images tag \
+    "${repo}:baremetal" "${repo}:${OS_TAG}"
+  ctr -n bare-metal-os images push --plain-http \
+    "127.0.0.1:11443/tkestack/${repo}:${OS_TAG}" \
+    "${repo}:${OS_TAG}"
+  curl -s "http://127.0.0.1:11443/v2/tkestack/${repo}/tags/list"
 done
 ```
 
-再推 arm64，换：
+KIND 里通过 `<KIND_REGISTRY_ADDRESS>:11443` 读到的就是刚才推进 `127.0.0.1:11443` 的同一份。物理机装 OS 时走 `<BOOTSTRAP_HOST_IP>:11443`。
 
-```text
-OS_ARCHIVE=<ACP_4_4_1_K25_ARM64_ARCHIVE>
-OS_TAG=<K25_ARM64_IMAGE_TAG>
-```
-
-两个最终 tag 不能互相覆盖。Workload 创建前，平台仓库必须同时有：
-
-```text
-tkestack/kubeos-rootfs:<K25_AMD64_IMAGE_TAG>
-tkestack/kubeos-iso:<K25_AMD64_IMAGE_TAG>
-tkestack/kubeos-rootfs:<K25_ARM64_IMAGE_TAG>
-tkestack/kubeos-iso:<K25_ARM64_IMAGE_TAG>
-```
+arm64 archive **这一步不要导入**，会覆盖本地 `*:baremetal` source tag。
 
 ---
 
@@ -156,9 +320,7 @@ export KUBECONFIG="$BOOTSTRAP_KUBECONFIG"
 
 ---
 
-## 3. Global：装 Bootstrap provider
-
-先确认 Bootstrap 集群可用：
+## 4. Global：装 Bootstrap provider
 
 ```bash
 kubectl get nodes
@@ -166,9 +328,9 @@ kubectl get storageclass
 kubectl -n cpaas-system get pods
 ```
 
-KIND 名必须是 `minialauda`，并且有默认 StorageClass（SeedImage 需要 `20Gi` PVC）。
+KIND 名必须是 `minialauda`，并且有默认 StorageClass。
 
-### 3.1 `global/bootstrap/01-dex-tls-bootstrap.yaml`
+### 4.1 `global/bootstrap/01-dex-tls-bootstrap.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -176,9 +338,13 @@ KIND 名必须是 `minialauda`，并且有默认 StorageClass（SeedImage 需要
 
 ```bash
 kubectl apply -f "$PACK_DIR/global/bootstrap/01-dex-tls-bootstrap.yaml"
+kubectl -n cpaas-system get certificate dex-tls-bootstrap
+kubectl -n cpaas-system get secret dex.tls
 ```
 
-### 3.2 `global/bootstrap/02-kubeadm-provider-apprelease.yaml`
+`Ready=True` 后再装 Bare Metal provider。这个 Secret 不要导入成品 Global。
+
+### 4.2 `global/bootstrap/02-kubeadm-provider-apprelease.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -188,9 +354,10 @@ kubectl apply -f "$PACK_DIR/global/bootstrap/01-dex-tls-bootstrap.yaml"
 
 ```bash
 kubectl apply -f "$PACK_DIR/global/bootstrap/02-kubeadm-provider-apprelease.yaml"
+kubectl -n cpaas-system get apprelease cluster-api-provider-kubeadm
 ```
 
-### 3.3 `global/bootstrap/03-baremetal-provider-apprelease.yaml`
+### 4.3 `global/bootstrap/03-baremetal-provider-apprelease.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -205,15 +372,22 @@ kubectl apply -f "$PACK_DIR/global/bootstrap/02-kubeadm-provider-apprelease.yaml
 ```bash
 kubectl apply -f "$PACK_DIR/global/bootstrap/03-baremetal-provider-apprelease.yaml"
 kubectl -n cpaas-system get apprelease
+kubectl -n cpaas-system get configmap elemental-image-catalog -o yaml
 ```
 
-两个 AppRelease Ready 后再继续。
+catalog 必须有：
+
+```text
+v1.35.6-acp.9_amd64_alaudaos.k.25: <KIND_REGISTRY_ADDRESS>:11443/tkestack/kubeos-rootfs:<K25_AMD64_IMAGE_TAG>
+```
+
+两个 AppRelease Ready、catalog 有 amd64 key 后再继续。
 
 ---
 
-## 4. Global：出 ISO，装三台控制面，创建 Cluster
+## 5. Global：出 ISO，装三台控制面，创建 Cluster
 
-### 4.1 `global/control-plane/01-registration-seedimage-amd64.yaml`
+### 5.1 `global/control-plane/01-registration-seedimage-amd64.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -231,15 +405,62 @@ os id           alaudaos.k.25
 
 ```bash
 kubectl apply -f "$PACK_DIR/global/control-plane/01-registration-seedimage-amd64.yaml"
-kubectl -n cpaas-system get seedimage global-registration-iso \
-  -o jsonpath='{.status.downloadURL}'; echo
+kubectl -n cpaas-system get pvc
+ISO_URL=""
+for i in $(seq 1 60); do
+  ISO_URL=$(kubectl -n cpaas-system get seedimage global-registration-iso \
+    -o jsonpath='{.status.downloadURL}' 2>/dev/null || true)
+  [ -n "$ISO_URL" ] && break
+  echo "waiting downloadURL ($i/60)..."
+  sleep 30
+done
+test -n "$ISO_URL"
+echo "$ISO_URL"
 ```
 
-`status.downloadURL` 为空不要下 ISO。这个 ISO 只给三台 Global 控制面，不要给 Workload 用。
+PVC Pending = 没有默认 StorageClass，不要干等。闸门是 `status.downloadURL` 非空，不是某个固定的 condition 名。
 
-### 4.2 三台 Global 物理机装系统
+在 **引导节点**上下 ISO（URL 通常只在集群网络内可访问）：
+
+```bash
+curl -fL --retry 3 -o /root/global-registration.iso "$ISO_URL"
+ls -lh /root/global-registration.iso
+```
+
+把 ISO 拷到能挂 BMC 虚拟光驱的操作机。这个 ISO 只给三台 Global 控制面，不要给 Workload 用。`cleanupAfterMinutes: 120` 过后构建产物会被清。
+
+Registration URL 只在引导节点终端看一眼，不要写进仓库、工单、聊天：
+
+```bash
+kubectl -n cpaas-system get machineregistration global-registration \
+  -o jsonpath='{.status.registrationURL}{"\n"}'
+```
+
+### 5.2 三台 Global 物理机装系统
 
 **节点：** 每台 Global 物理机 BMC / Live ISO。不用 kubectl。
+
+进 Live 前确认这三台已经对时（见 1.4）。BMC 挂上 5.1 的 ISO，从光驱启动。Live 控制台一般是 root、无密码（以现场 ISO 提示为准）。
+
+无 DHCP 时先配静态 IP，再做软链。地址按 **这台机器** 改：
+
+```bash
+ip -br link
+ip -br addr
+nmcli con add type ethernet ifname <NETWORK_DEVICE> con-name mgmt \
+  ipv4.method manual \
+  ipv4.addresses <这台机器管理地址>/<前缀> \
+  ipv4.gateway <网关> \
+  ipv4.dns <DNS> \
+  ipv6.method ignore \
+  connection.autoconnect yes
+nmcli con up mgmt
+ping -c 3 <BOOTSTRAP_HOST_IP>
+nc -vz <BOOTSTRAP_HOST_IP> 12443 || curl -skI "https://<BOOTSTRAP_HOST_IP>:12443" | head
+nc -vz <BOOTSTRAP_HOST_IP> 11443 || curl -sI "http://<BOOTSTRAP_HOST_IP>:11443/v2/" | head
+```
+
+有 DHCP 且能 ping 通引导节点就跳过配网。
 
 对照 `config.local.yaml` 的 WWN：
 
@@ -259,7 +480,13 @@ readlink -f /dev/elemental-install-target
 test -b "$(readlink -f /dev/elemental-install-target)"
 ```
 
-不要链到 ISO、loop 或数据盘。装完：弹出虚拟光驱，BMC 改成硬盘优先，等机器回到网络。
+不要链到 ISO、loop 或数据盘。软链完成后不要再手搓 `elemental-register`。看进度：
+
+```bash
+journalctl -f | grep -Ei 'elemental|register|install|cloud-init' || true
+```
+
+装完：弹出虚拟光驱，BMC 改成硬盘优先，确认下次进已安装 OS。`/` 不能还是 Live。已离开 Live 的机器不要再回 Live 重建链接。
 
 回到 CAN 节点：
 
@@ -267,7 +494,7 @@ test -b "$(readlink -f /dev/elemental-install-target)"
 kubectl -n cpaas-system get machineinventory -o wide
 ```
 
-三个 inventory `Ready=True` 后，把实际名称填进 `config.local.yaml` 的：
+三个 inventory `Ready=True`、已从系统盘启动后，把实际名称填进 `config.local.yaml` 的：
 
 ```text
 <GLOBAL_CP_INVENTORY_1>
@@ -275,9 +502,9 @@ kubectl -n cpaas-system get machineinventory -o wide
 <GLOBAL_CP_INVENTORY_3>
 ```
 
-三个名称必须互不相同。
+三个名称必须互不相同。此时 **不要** apply `04`。
 
-### 4.3 `global/control-plane/02-control-plane-pool.yaml`
+### 5.3 `global/control-plane/02-control-plane-pool.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -292,7 +519,7 @@ hostname 保持 `global-cp-1` / `global-cp-2` / `global-cp-3`。
 kubectl apply -f "$PACK_DIR/global/control-plane/02-control-plane-pool.yaml"
 ```
 
-### 4.4 `global/control-plane/03-baremetal-cluster.yaml`
+### 5.4 `global/control-plane/03-baremetal-cluster.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -300,13 +527,13 @@ kubectl apply -f "$PACK_DIR/global/control-plane/02-control-plane-pool.yaml"
 | `<GLOBAL_CONTROL_PLANE_VIP>` | `spec.controlPlaneLoadBalancer.host` |
 | `<NETWORK_DEVICE>` | `spec.networkDevice` |
 
-注释里的 `<PLATFORM_REGISTRY>` 只用于 installer 成功后的 patch 目标，首次 apply 不要改成平台仓库。`type: External`、`port: 6443` 不要改。installer 成功后如果这个对象还停在 Bootstrap 仓库，只 patch annotation 到 `<PLATFORM_REGISTRY>:11443`，不要重新 apply 整个文件。
+首次 apply 不要改成平台仓库。`type: External`、`port: 6443` 不要改。installer 成功后如果这个对象还停在 Bootstrap 仓库，只按 7.1 patch，不要重新 apply 整个文件。
 
 ```bash
 kubectl apply -f "$PACK_DIR/global/control-plane/03-baremetal-cluster.yaml"
 ```
 
-### 4.5 `global/control-plane/04-control-plane-machine-template.yaml`
+### 5.5 `global/control-plane/04-control-plane-machine-template.yaml`
 
 无变量。确认 `machineInventoryPoolRef.name` 是 `global-control-plane-pool`。
 
@@ -314,7 +541,7 @@ kubectl apply -f "$PACK_DIR/global/control-plane/03-baremetal-cluster.yaml"
 kubectl apply -f "$PACK_DIR/global/control-plane/04-control-plane-machine-template.yaml"
 ```
 
-### 4.6 `global/control-plane/05-cluster.yaml`
+### 5.6 `global/control-plane/05-cluster.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -323,13 +550,13 @@ kubectl apply -f "$PACK_DIR/global/control-plane/04-control-plane-machine-templa
 | `<GLOBAL_POD_CIDR>` | `spec.clusterNetwork.pods.cidrBlocks[0]` |
 | `<GLOBAL_SERVICE_CIDR>` | `spec.clusterNetwork.services.cidrBlocks[0]` |
 
-注释里的 `<PLATFORM_REGISTRY>` 是 installer 改写后的目标，首次 apply 不要改成平台仓库。Kubernetes 版本保持 `v1.35.6-acp.9`，Kube-OVN 保持 `v4.4.12`。installer 会改这个 Cluster 的 registry annotation，成功后不要重新 apply 这个文件。
+Kubernetes 版本保持 `v1.35.6-acp.9`，Kube-OVN 保持 `v4.4.12`。installer 会改这个 Cluster 的 registry annotation，成功后不要重新 apply 这个文件。
 
 ```bash
 kubectl apply -f "$PACK_DIR/global/control-plane/05-cluster.yaml"
 ```
 
-### 4.7 `global/control-plane/06-kubeadm-control-plane.yaml`
+### 5.7 `global/control-plane/06-kubeadm-control-plane.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -356,17 +583,27 @@ kubectl -n cpaas-system get kubeadmcontrolplane global-kcp
 kubectl -n cpaas-system get machine,baremetalmachine -o wide
 ```
 
-三台 Global 控制面 Ready 后再做 handoff。
+### 5.8 抽出 global-kubeconfig（还不能拆 KIND）
+
+```bash
+kubectl -n cpaas-system get secret global-kubeconfig \
+  -o jsonpath='{.data.value}' | base64 -d > "$PACK_DIR/global-kubeconfig"
+chmod 600 "$PACK_DIR/global-kubeconfig"
+export GLOBAL_KUBECONFIG="$PACK_DIR/global-kubeconfig"
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" get nodes -o wide
+```
+
+期待：三台 Master Node Ready；KCP `Ready=True`；Cluster `Phase: Provisioned`。此时还不是拆 KIND 的时候，也还没 POST installer。
 
 ---
 
-## 5. Global：handoff 和 installer
+## 6. Global：handoff 和 installer
 
 **节点：** CAN / Bootstrap。kubeconfig：`$BOOTSTRAP_KUBECONFIG`。
 
-### 5.1 `global/bootstrap/04-dcs-import-extra-resources.yaml`
+### 6.1 `global/bootstrap/04-dcs-import-extra-resources.yaml`
 
-先读实际 inventory：
+从 **已经 reconcile 的** BaremetalMachine 抄名字，不要用尚未被 Machine 认领的列表：
 
 ```bash
 kubectl -n cpaas-system get baremetalmachine \
@@ -380,13 +617,16 @@ kubectl -n cpaas-system get baremetalmachine \
 | `<GLOBAL_CP_INVENTORY_2>` | names[1] |
 | `<GLOBAL_CP_INVENTORY_3>` | names[2] |
 
-`global-registration` 已写死，不要改。不要往这个文件加 SeedImage、token、plan、bootstrap TLS。
+三个名字必须和 Pool 一致，且互不相同。`global-registration` 已写死，不要改。不要往这个文件加 SeedImage、token、plan、bootstrap TLS。
 
 ```bash
 kubectl apply -f "$PACK_DIR/global/bootstrap/04-dcs-import-extra-resources.yaml"
+kubectl -n cpaas-system get cm dcs-import-extra-resources -o yaml
 ```
 
-### 5.2 `global/bootstrap/05-installer-config.example.json`
+缺这个 ConfigMap 时，handoff 目标列表为空，成品 Global 没有 BaremetalMachine / Inventory / Registration。
+
+### 6.2 `global/bootstrap/05-installer-config.example.json`
 
 复制到本机，不要改仓库里的 example：
 
@@ -402,13 +642,19 @@ cp "$PACK_DIR/global/bootstrap/05-installer-config.example.json" \
 | `<PLATFORM_REGISTRY>` | `registry.domain`，写成 `<PLATFORM_REGISTRY>:11443` |
 | `Registry` | `registry.username`，不要写成 `admin` |
 | `<BASE64_REGISTRY_PASSWORD>` | `registry.password` |
-| `<PLATFORM_HOST>` | `console.host[0]`、`console.globalHost` |
+| `<PLATFORM_HOST>` | `console.host[0]`、`console.globalHost`。不要带 `https://`，不要带端口 |
 | `<GLOBAL_POD_CIDR>` | `cluster.clusterCIDR` |
 | `<GLOBAL_SERVICE_CIDR>` | `cluster.serviceCIDR` |
 | `<GLOBAL_CONTROL_PLANE_VIP>` | `cluster.features.ha.vip` |
 | `<BOOTSTRAP_HOST_IP>` | `hostIP` |
 
-`deployMode` 保持 `normal`。`features.ha` 是 installer 收 API VIP 的字段。
+`deployMode` 保持 `normal`。`features.ha` 是 installer 收 API VIP 的字段。不要设 `registry.externalAddress`。
+
+```bash
+python3 -m json.tool /root/installer-config.json >/dev/null
+```
+
+`basic.password` / `registry.password` 看起来应是字母数字和 `=`，不是刚敲的明文。
 
 ```bash
 kubectl -n cpaas-system get pods -l service_name=cpaas-installer -o wide
@@ -424,41 +670,133 @@ kubectl -n cpaas-system logs -f \
   -l service_name=cpaas-installer --all-containers=true --prefix=true
 ```
 
-另一个终端提交。必须打 installer Pod IP 的 `8080`，不要打平台 VIP：
+另一个终端提交。必须在引导节点打 installer Pod IP 的 `8080`，不要打平台 VIP，笔记本/跳板机到不了这个 Pod IP：
 
 ```bash
+curl -sS -m 5 "http://${INSTALLER_IP}:8080/cpaas-installer/api/progress" | head
 curl -fS -X POST \
   "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/dcs" \
   -H 'Content-Type: application/json' \
   --data-binary @/root/installer-config.json
-curl "http://${INSTALLER_IP}:8080/cpaas-installer/api/progress"
 ```
 
-installer 成功后保存 `global-kubeconfig`。
+监控（通常 30–60 分钟）：
+
+```bash
+curl "http://${INSTALLER_IP}:8080/cpaas-installer/api/progress"
+tail -f /var/cpaas/data/installer.log
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" get nodes
+```
+
+installer Success 不等于可以拆引导集群。
+
+### 6.3 交接门槛
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" -n cpaas-system \
+  get configmap baremetal-system-agent-handoff -o jsonpath='{.data.ready}{"\n"}'
+# 必须是 true。不要手工 patch。
+
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" -n cpaas-system \
+  get machineinventories.elemental.cattle.io \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.plan.state}{"\n"}{end}'
+# 每台导入的 Global 主机 status.plan.state = Applied
+
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" -n cpaas-system \
+  get rolebinding baremetal-global-system-agent-handoff-bridge
+# 必须 NotFound
+```
+
+三项都过后再做第 7 章。KIND 先留着，引导节点还要用来 `ctr push`。
 
 ---
 
-## 6. Global：Finished provider 和 catalog CM
+## 7. Global：推到平台仓库、Finished provider、catalog CM
 
-**节点：** CAN / 运维机。从此改用：
+**节点：** CAN / Bootstrap。OS 推送仍在引导节点做。从此查看成品集群改用 `$GLOBAL_KUBECONFIG`。
 
-```bash
-export KUBECONFIG="$GLOBAL_KUBECONFIG"
-kubectl get nodes
-```
+引导仓库里的 ISO / catalog / chart **不会**跟着 installer 过去。不推到平台仓库，Workload 会 `MANIFEST_UNKNOWN`。
 
-### 6.1 确认 registry 已切到平台仓库
+### 7.1 确认并 patch registry 注解
 
 ```bash
-kubectl -n cpaas-system get cluster global \
-  -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}'; echo
-kubectl -n cpaas-system get baremetalcluster global \
-  -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}'; echo
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" -n cpaas-system \
+  get cluster,baremetalcluster global -o \
+  custom-columns='KIND:.kind,REG:.metadata.annotations.cpaas\.io/registry-address'
 ```
 
-`BaremetalCluster/global` 如果还是 `<BOOTSTRAP_HOST_IP>:11443`，只 patch 到 `<PLATFORM_REGISTRY>:11443`。不要重新 apply `03` 或 `05`。
+期待两边都是 `<PLATFORM_REGISTRY>:11443`。Cluster 仍是 `<BOOTSTRAP_HOST_IP>:11443` 时，先确认 installer Success。BaremetalCluster 官方不改写，按下面 patch：
 
-### 6.2 `global/control-plane/07-finished-kubeadm-provider-apprelease.yaml`
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" -n cpaas-system annotate baremetalcluster global \
+  cpaas.io/registry-address=<PLATFORM_REGISTRY>:11443 --overwrite
+```
+
+不要出现 `127.0.0.1` / `<KIND_REGISTRY_ADDRESS>` / 残留的 `<BOOTSTRAP_HOST_IP>:11443`。不要重新 apply `03` 或 `05`。
+
+### 7.2 推 amd64 OS 到平台仓库
+
+按现场策略配置平台仓库证书信任，不要关 TLS 校验。用户名是 `Registry`，密码是 1.5 生成的明文（不是 base64）。
+
+```bash
+export OS_TAG=<K25_AMD64_IMAGE_TAG>
+export REGISTRY=<PLATFORM_REGISTRY>:11443
+ctr -n bare-metal-os images ls -q | grep "$OS_TAG"
+for repo in kubeos-rootfs kubeos-iso; do
+  ctr -n bare-metal-os images push \
+    -u "Registry:<REGISTRY_PASSWORD>" \
+    "$REGISTRY/tkestack/${repo}:${OS_TAG}" \
+    "${repo}:${OS_TAG}"
+done
+```
+
+### 7.3 导入 arm64 archive，推到平台仓库
+
+amd64 最终 tag 已经打好后再导入 arm64，避免覆盖 `*:baremetal` 时把还没 tag 的 amd64 弄丢。
+
+```bash
+ctr -n bare-metal-os images import --all-platforms --no-unpack /root/<ACP_4_4_1_K25_ARM64_ARCHIVE>
+ctr -n bare-metal-os images ls -q
+```
+
+把读到的最终 tag 填进 `<K25_ARM64_IMAGE_TAG>`。两个最终 tag 不能互相覆盖。
+
+```bash
+export OS_TAG=<K25_ARM64_IMAGE_TAG>
+export REGISTRY=<PLATFORM_REGISTRY>:11443
+for repo in kubeos-rootfs kubeos-iso; do
+  ctr -n bare-metal-os images tag \
+    "${repo}:baremetal" "${repo}:${OS_TAG}"
+  ctr -n bare-metal-os images push \
+    -u "Registry:<REGISTRY_PASSWORD>" \
+    "$REGISTRY/tkestack/${repo}:${OS_TAG}" \
+    "${repo}:${OS_TAG}"
+done
+```
+
+平台仓库此时必须同时有：
+
+```text
+tkestack/kubeos-rootfs:<K25_AMD64_IMAGE_TAG>
+tkestack/kubeos-iso:<K25_AMD64_IMAGE_TAG>
+tkestack/kubeos-rootfs:<K25_ARM64_IMAGE_TAG>
+tkestack/kubeos-iso:<K25_ARM64_IMAGE_TAG>
+```
+
+### 7.4 packtool 把两个 chart 推到平台仓库
+
+```bash
+PACKTOOL=/root/installer/res/amd64/packtool
+$PACKTOOL pack push -h
+$PACKTOOL pack push -r "<PLATFORM_REGISTRY>:11443" \
+  -c /root/<KUBEADM_PROVIDER_ALL_PACKAGE>
+$PACKTOOL pack push -r "<PLATFORM_REGISTRY>:11443" \
+  -c /root/<BAREMETAL_PROVIDER_ALL_MULTIARCH_PACKAGE>
+```
+
+认证参数按 help。仓库账号是 `Registry`。
+
+### 7.5 `global/control-plane/07-finished-kubeadm-provider-apprelease.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -469,10 +807,11 @@ kubectl -n cpaas-system get baremetalcluster global \
 这个文件必须 apply 到 Finished Global，不要 apply 到 `minialauda`。
 
 ```bash
+export KUBECONFIG="$GLOBAL_KUBECONFIG"
 kubectl apply -f "$PACK_DIR/global/control-plane/07-finished-kubeadm-provider-apprelease.yaml"
 ```
 
-### 6.3 `global/control-plane/08-finished-baremetal-provider-apprelease.yaml`
+### 7.6 `global/control-plane/08-finished-baremetal-provider-apprelease.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -484,12 +823,15 @@ kubectl apply -f "$PACK_DIR/global/control-plane/07-finished-kubeadm-provider-ap
 
 这里必须同时有两个 catalog key，tag 不能交叉。
 
+先确认成品 `dex.tls` 的 key。installer 自签证书通常只有 `tls.crt` / `tls.key`，本文件 `caCertSecretKey` 已写成 `tls.crt`。若 Secret 里是 `ca.crt`，把 YAML 改回 `ca.crt` 再 apply。
+
 ```bash
+kubectl -n cpaas-system get secret dex.tls -o jsonpath='{.data}'; echo
 kubectl apply -f "$PACK_DIR/global/control-plane/08-finished-baremetal-provider-apprelease.yaml"
 kubectl -n cpaas-system get apprelease
 ```
 
-### 6.4 检查 ConfigMap `cpaas-system/elemental-image-catalog`
+### 7.7 检查 ConfigMap `cpaas-system/elemental-image-catalog`
 
 AppRelease 只是输入。Workload 真正读的是这个 CM：
 
@@ -514,23 +856,28 @@ kubectl -n cpaas-system get configmap elemental-image-catalog \
   -o jsonpath='{.data}'; echo
 ```
 
-CM 对象不存在时，先查 `08` 是否 Ready。两个 key 都对了，再创建 Workload。
+CM 对象不存在时，先查 `08` 是否 Ready。两个 key 都对了，再确认 Global 上有默认 StorageClass，然后才可以拆 KIND、创建 Workload。
+
+拆 KIND 之前再扫一遍 Cluster / BaremetalCluster 注解必须是 `<PLATFORM_REGISTRY>:11443`。拆完 `127.0.0.1` / `<KIND_REGISTRY_ADDRESS>` 会失效。
 
 ---
 
 # 第二部分：创建 Workload 集群
 
-本章全部使用 `$GLOBAL_KUBECONFIG`。
+本章全部使用 `$GLOBAL_KUBECONFIG`。KIND 已不再使用。
 
 ```bash
 export KUBECONFIG="$GLOBAL_KUBECONFIG"
+kubectl get nodes
+kubectl get sc
+kubectl -n cpaas-system get configmap elemental-image-catalog -o yaml
 ```
 
 ---
 
-## 7. Workload：amd64 控制面
+## 8. Workload：amd64 控制面
 
-### 7.1 `workload/control-plane/01-registration-seedimage-amd64.yaml`
+### 8.1 `workload/control-plane/01-registration-seedimage-amd64.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -547,17 +894,24 @@ os id           alaudaos.k.25
 
 ```bash
 kubectl apply -f "$PACK_DIR/workload/control-plane/01-registration-seedimage-amd64.yaml"
-kubectl -n cpaas-system get seedimage hcs-workloadcluster-registration-iso \
-  -o jsonpath='{.status.downloadURL}'; echo
+ISO_URL=""
+for i in $(seq 1 60); do
+  ISO_URL=$(kubectl -n cpaas-system get seedimage hcs-workloadcluster-registration-iso \
+    -o jsonpath='{.status.downloadURL}' 2>/dev/null || true)
+  [ -n "$ISO_URL" ] && break
+  echo "waiting downloadURL ($i/60)..."
+  sleep 30
+done
+test -n "$ISO_URL"
 ```
 
 这个 ISO 只给三台 Workload amd64 控制面。不要复用 Global ISO。
 
-### 7.2 三台 Workload 控制面物理机装系统
+### 8.2 三台 Workload 控制面物理机装系统
 
 **节点：** 每台 Workload amd64 控制面 BMC / Live ISO。
 
-WWN 对照：
+进 Live 前对时。WWN 对照：
 
 ```text
 <WORKLOAD_CP_1_OS_DISK_WWN>
@@ -565,7 +919,9 @@ WWN 对照：
 <WORKLOAD_CP_3_OS_DISK_WWN>
 ```
 
-symlink 流程与 4.2 相同。装完回到 CAN：
+symlink、无 DHCP 配网、弹出光驱、改硬盘优先，流程与 5.2 相同。网络要能访问 `<PLATFORM_HOST>` 的 443 和 `<PLATFORM_REGISTRY>:11443`，不是引导节点 `:12443`。
+
+装完回到 CAN：
 
 ```bash
 kubectl -n cpaas-system get machineinventory \
@@ -580,7 +936,7 @@ kubectl -n cpaas-system get machineinventory \
 <WORKLOAD_CP_INVENTORY_3>
 ```
 
-### 7.3 `workload/control-plane/02-control-plane-pool.yaml`
+### 8.3 `workload/control-plane/02-control-plane-pool.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -595,7 +951,7 @@ hostname 保持 `hcs-workloadcluster-cp-1/2/3`。三个 name 不能重复。如�
 kubectl apply -f "$PACK_DIR/workload/control-plane/02-control-plane-pool.yaml"
 ```
 
-### 7.4 `workload/control-plane/03-baremetal-cluster.yaml`
+### 8.4 `workload/control-plane/03-baremetal-cluster.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -609,7 +965,7 @@ kubectl apply -f "$PACK_DIR/workload/control-plane/02-control-plane-pool.yaml"
 kubectl apply -f "$PACK_DIR/workload/control-plane/03-baremetal-cluster.yaml"
 ```
 
-### 7.5 `workload/control-plane/04-control-plane-machine-template.yaml`
+### 8.5 `workload/control-plane/04-control-plane-machine-template.yaml`
 
 无变量。确认 `machineInventoryPoolRef.name` 是 `hcs-workloadcluster-control-plane-pool`。
 
@@ -617,7 +973,7 @@ kubectl apply -f "$PACK_DIR/workload/control-plane/03-baremetal-cluster.yaml"
 kubectl apply -f "$PACK_DIR/workload/control-plane/04-control-plane-machine-template.yaml"
 ```
 
-### 7.6 `workload/control-plane/05-cluster.yaml`
+### 8.6 `workload/control-plane/05-cluster.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -630,7 +986,7 @@ kubectl apply -f "$PACK_DIR/workload/control-plane/04-control-plane-machine-temp
 kubectl apply -f "$PACK_DIR/workload/control-plane/05-cluster.yaml"
 ```
 
-### 7.7 `workload/control-plane/06-kubeadm-control-plane.yaml`
+### 8.7 `workload/control-plane/06-kubeadm-control-plane.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -648,9 +1004,9 @@ kubectl get machines -l cluster.x-k8s.io/cluster-name=hcs-workloadcluster -o wid
 
 ---
 
-## 8. Workload：arm64 Worker
+## 9. Workload：arm64 Worker
 
-### 8.1 `workload/worker/01-registration-seedimage-arm64.yaml`
+### 9.1 `workload/worker/01-registration-seedimage-arm64.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -669,20 +1025,27 @@ os id           alaudaos.k.25
 
 ```bash
 kubectl apply -f "$PACK_DIR/workload/worker/01-registration-seedimage-arm64.yaml"
-kubectl -n cpaas-system get seedimage \
-  hcs-workloadcluster-arm64-worker-registration-iso \
-  -o jsonpath='{.status.downloadURL}'; echo
+ISO_URL=""
+for i in $(seq 1 60); do
+  ISO_URL=$(kubectl -n cpaas-system get seedimage \
+    hcs-workloadcluster-arm64-worker-registration-iso \
+    -o jsonpath='{.status.downloadURL}' 2>/dev/null || true)
+  [ -n "$ISO_URL" ] && break
+  echo "waiting downloadURL ($i/60)..."
+  sleep 30
+done
+test -n "$ISO_URL"
 ```
 
-### 8.2 ARM 物理机装系统
+### 9.2 ARM 物理机装系统
 
 **节点：** 那一台 ARM Worker BMC / Live ISO。
 
-WWN 对照 `<WORKLOAD_ARM64_WORKER_1_OS_DISK_WWN>`。symlink 流程与 4.2 相同。
+进 Live 前对时。WWN 对照 `<WORKLOAD_ARM64_WORKER_1_OS_DISK_WWN>`。symlink 和配网流程与 5.2 相同。
 
 装完后把实际 inventory 名称填进 `<WORKLOAD_ARM64_WORKER_INVENTORY>`。
 
-### 8.3 `workload/worker/02-worker-pool-arm64.yaml`
+### 9.3 `workload/worker/02-worker-pool-arm64.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -695,7 +1058,7 @@ hostname 保持 `hcs-workloadcluster-arm64-worker-1`。
 kubectl apply -f "$PACK_DIR/workload/worker/02-worker-pool-arm64.yaml"
 ```
 
-### 8.4 `workload/worker/03-worker-machine-template-arm64.yaml`
+### 9.4 `workload/worker/03-worker-machine-template-arm64.yaml`
 
 无变量。确认 `machineInventoryPoolRef.name` 是 `hcs-workloadcluster-arm64-worker-pool`。
 
@@ -703,7 +1066,7 @@ kubectl apply -f "$PACK_DIR/workload/worker/02-worker-pool-arm64.yaml"
 kubectl apply -f "$PACK_DIR/workload/worker/03-worker-machine-template-arm64.yaml"
 ```
 
-### 8.5 `workload/worker/04-worker-kubeadm-config-template-arm64.yaml`
+### 9.5 `workload/worker/04-worker-kubeadm-config-template-arm64.yaml`
 
 | 变量 | 字段 |
 |---|---|
@@ -721,7 +1084,7 @@ kubelet patch 不要写 `staticPodPath`。
 kubectl apply -f "$PACK_DIR/workload/worker/04-worker-kubeadm-config-template-arm64.yaml"
 ```
 
-### 8.6 `workload/worker/05-worker-machine-deployment-arm64.yaml`
+### 9.6 `workload/worker/05-worker-machine-deployment-arm64.yaml`
 
 无变量。固定值：
 
@@ -739,30 +1102,25 @@ kubectl get machines -l cluster.x-k8s.io/cluster-name=hcs-workloadcluster -o wid
 
 ---
 
-## 9. 运维
+## 10. 运维
 
 先看日志，再删单个对象。删 `Cluster` 是最后手段，且只能删 Workload，不能删 `Cluster/global`。
 
-### 9.1 时间同步
+### 10.1 时间同步
 
-所有 Global 控制面、Workload 控制面、ARM Worker 都要先对时：
+漏做了对时：先把相关物理机时间同步好，再删卡住的 `Machine`，看控制器会不会重建。
 
 ```bash
 date -u
 timedatectl show -p NTPSynchronized --value
 chronyc tracking
-```
-
-漏做了对时：先把相关物理机时间同步好，再删卡住的 `Machine`，看控制器会不会重建。
-
-```bash
 kubectl --kubeconfig "$GLOBAL_KUBECONFIG" -n cpaas-system get machine -o wide
 kubectl --kubeconfig "$GLOBAL_KUBECONFIG" -n cpaas-system delete machine <FAILED_MACHINE_NAME>
 kubectl --kubeconfig "$GLOBAL_KUBECONFIG" -n cpaas-system get machine,baremetalmachine -o wide \
   -l cluster.x-k8s.io/cluster-name=<CLUSTER_NAME>
 ```
 
-### 9.2 CAN 上看 installer
+### 10.2 CAN 上看 installer
 
 kubeconfig 仍是 `$BOOTSTRAP_KUBECONFIG`：
 
@@ -784,7 +1142,7 @@ export INSTALLER_IP=$(kubectl --kubeconfig "$BOOTSTRAP_KUBECONFIG" \
 curl "http://${INSTALLER_IP}:8080/cpaas-installer/api/progress"
 ```
 
-### 9.3 触发重新安装
+### 10.3 触发重新安装
 
 资源已经 apply 完但卡住时，先删失败的 `Machine`：
 
@@ -797,7 +1155,7 @@ kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
 
 旧对象被清掉、新对象被拉起，说明上一轮已经清完并开始重装。
 
-`ImageCatalogMiss`：先按 6.4 补 catalog CM，再只删失败的 `BaremetalMachine`。
+`ImageCatalogMiss`：先按 7.7 补 catalog CM，再只删失败的 `BaremetalMachine`。不要删 Cluster。
 
 只有单个对象删了也拉不起来、并且现场允许重建这个 Workload 时，才删 Workload Cluster：
 
@@ -820,7 +1178,7 @@ workload/worker/05-worker-machine-deployment-arm64.yaml
 
 pool 也被清掉时，先确认 inventory Ready，再 apply 两个 `02`。已经存在的 Registration / SeedImage / inventory 不要重复创建。不要删 `Cluster/global`。
 
-### 9.4 登录机器看 cloud-init / elemental-agent
+### 10.4 登录机器看 cloud-init / elemental-agent
 
 ```bash
 sudo less /var/log/cloud-init-output.log
@@ -845,7 +1203,7 @@ Live ISO 还不能 SSH 时，在 BMC 上看：
 journalctl -f | grep -Ei 'elemental|register|install|cloud-init' || true
 ```
 
-### 9.5 kubelet / containerd
+### 10.5 kubelet / containerd
 
 ```bash
 sudo journalctl -fu kubelet
@@ -854,9 +1212,9 @@ sudo crictl ps -a
 sudo systemctl status kubelet containerd
 ```
 
-节点上如果已经出现 `"staticPodPath": null`，先改对应 YAML，再按 9.3 重建那台 Machine。
+节点上如果已经出现 `"staticPodPath": null`，先改对应 YAML，再按 10.3 重建那台 Machine。
 
-### 9.6 CAN 上看 cluster-transformer
+### 10.6 CAN 上看 cluster-transformer
 
 Bootstrap：
 
