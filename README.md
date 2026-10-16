@@ -137,6 +137,100 @@ v1.35.6-acp.9_arm64_alaudaos.k.25
 
 部署前必须确认 hybrid Core Package、`ALL` Kubeadm provider、支持 KubeOS/amd64/arm64 的 `ALL` Bare Metal provider，以及 amd64/arm64 KubeOS archive、checksum 和最终 image tag 来自同一套 ACP 4.4.1 交付物。
 
+### 2.1 Catalog、rootfs 和 ISO 的替换关系
+
+本包中有三种不同的镜像引用，不能混用：
+
+| 用途 | 镜像 | 读取位置 |
+|---|---|---|
+| Bare Metal catalog | `tkestack/kubeos-rootfs:<K25_*_IMAGE_TAG>` | Bare Metal provider AppRelease 的 `provider.imageCatalog.images` |
+| 节点安装系统 | `tkestack/kubeos-rootfs:<K25_*_IMAGE_TAG>` | MachineRegistration 的 `spec.config.elemental.install.system-uri` |
+| 生成 Live ISO | `tkestack/kubeos-iso:<K25_*_IMAGE_TAG>` | SeedImage 的 `spec.baseImage` |
+
+最终 image tag 不是 `baremetal`。`baremetal` 只是 archive 导入后的本地 source tag；推送后必须使用 Customer Portal archive 对应的最终 tag。
+
+#### Bootstrap 阶段：只替换 amd64 catalog
+
+文件：
+
+```text
+global/bootstrap/03-baremetal-provider-apprelease.yaml
+```
+
+保持 catalog key 不变，只替换 repository/tag 中的最终值：
+
+```yaml
+provider:
+  imageCatalog:
+    images:
+      v1.35.6-acp.9_amd64_alaudaos.k.25:
+        repository: tkestack/kubeos-rootfs
+        tag: <K25_AMD64_IMAGE_TAG>
+```
+
+Bootstrap provider 只需要这个 amd64 catalog，因为它只负责创建 Global amd64 控制面。
+
+#### Finished Global 阶段：同时替换 amd64 和 arm64 catalog
+
+文件：
+
+```text
+global/control-plane/08-finished-baremetal-provider-apprelease.yaml
+```
+
+必须同时存在以下两个条目：
+
+```yaml
+provider:
+  imageCatalog:
+    images:
+      v1.35.6-acp.9_amd64_alaudaos.k.25:
+        repository: tkestack/kubeos-rootfs
+        tag: <K25_AMD64_IMAGE_TAG>
+      v1.35.6-acp.9_arm64_alaudaos.k.25:
+        repository: tkestack/kubeos-rootfs
+        tag: <K25_ARM64_IMAGE_TAG>
+```
+
+这里不能把 ARM tag 写成 amd64 tag，也不能把 `arm64` catalog key 改成 `amd64`。ARM tag 的后缀必须以实际 archive 为准，不能凭空猜测 `.aarch64`。
+
+#### Registration/SeedImage 必须与 catalog 对应
+
+Global amd64：
+
+```text
+global/control-plane/01-registration-seedimage-amd64.yaml
+system-uri: <BOOTSTRAP_HOST_IP>:11443/tkestack/kubeos-rootfs:<K25_AMD64_IMAGE_TAG>
+baseImage: <KIND_REGISTRY_ADDRESS>:11443/tkestack/kubeos-iso:<K25_AMD64_IMAGE_TAG>
+```
+
+Workload amd64：
+
+```text
+workload/control-plane/01-registration-seedimage-amd64.yaml
+system-uri: <PLATFORM_REGISTRY>:11443/tkestack/kubeos-rootfs:<K25_AMD64_IMAGE_TAG>
+baseImage: <PLATFORM_REGISTRY>:11443/tkestack/kubeos-iso:<K25_AMD64_IMAGE_TAG>
+```
+
+Workload arm64：
+
+```text
+workload/worker/01-registration-seedimage-arm64.yaml
+system-uri: <PLATFORM_REGISTRY>:11443/tkestack/kubeos-rootfs:<K25_ARM64_IMAGE_TAG>
+baseImage: <PLATFORM_REGISTRY>:11443/tkestack/kubeos-iso:<K25_ARM64_IMAGE_TAG>
+targetPlatform: linux/arm64
+```
+
+检查顺序必须是：
+
+1. archive 架构正确；
+2. archive 中的最终 rootfs/ISO tag 已确认；
+3. 两个 image 已推送到对应 registry；
+4. provider AppRelease 的 catalog key/tag 已替换；
+5. Registration 的 `system-uri` 使用同架构 rootfs tag；
+6. SeedImage 的 `baseImage` 使用同架构 ISO tag；
+7. 最后才创建或重建 Machine。
+
 ---
 
 ## 3. 导入并推送 KubeOS image
