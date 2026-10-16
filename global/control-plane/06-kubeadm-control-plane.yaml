@@ -2,6 +2,8 @@
 # ACP 4.4.1 Bare Metal KubeadmControlPlane for the global cluster.
 # Replace sshAuthorizedKeys before apply. API VIP <GLOBAL_CONTROL_PLANE_VIP> and platform host <BOOTSTRAP_HOST_IP> are baked.
 # Bare Metal cannot over-provision control-plane machines: maxSurge must stay 0.
+# Kubelet patch includes imagePullCredentialsVerificationPolicy: NeverVerify.
+# Omit staticPodPath (including null). Keep volume-plugin-dir and flex-volume-plugin-dir.
 # Official Global Step 4 fragment omits files/users/clusterConfiguration body and
 # uses nodeDrainTimeout: 1m. This file is the complete create-cluster KCP
 # (files, kubelet patch, audit, skip-kube-proxy, drain 5m). Do not apply the fragment.

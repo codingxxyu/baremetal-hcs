@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.5-draft — 2026-10-17
+
+Field-handbook rewrite and YAML structural audit. Manifest objects are unchanged except comments.
+
+- README: one shared handoff path (chapters 6–7) for both host scenes. Physical scene no longer duplicates installer / platform-registry steps.
+- README: physical Global Pool–KCP and Workload Pool–KCP / Worker MD now point at the HCS sections that already document the same files, placeholders, and apply commands.
+- README: operations move from chapter 15 to chapter 13. Wording is tightened; gates, commands, and placeholder tables stay.
+- YAML audit: all YAML/JSON parse; embedded kubelet JSON is valid. HCS Registration keeps `/dev/vda`; ISO twins keep `/dev/elemental-install-target`. Pools omit `networkDevice`; both BaremetalCluster objects keep it. Duplicate MachineRegistration names remain intentional twins.
+- KCP / ARM worker comments record `NeverVerify`, omitted `staticPodPath`, and K25 volume-plugin dirs.
+- `config.example.yaml` pack version `0.1.5-draft`; package filename tokens (`<ACP_4_4_1_HYBRID_CORE_PACKAGE>`, `<KUBEADM_PROVIDER_ALL_PACKAGE>`, `<BAREMETAL_PROVIDER_ALL_MULTIARCH_PACKAGE>`) are named next to the worksheet fields.
+
 ## 0.1.4-draft — 2026-10-17
 
 Splits the handbook into two field modules. YAML objects are unchanged.

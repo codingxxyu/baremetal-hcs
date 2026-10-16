@@ -1,5 +1,7 @@
 # APPLY-ON: finished Global   kubeconfig: global-kubeconfig
 # Do not pre-fill hostname, provider-id, or criSocket.
+# Kubelet patch includes imagePullCredentialsVerificationPolicy: NeverVerify.
+# Keep volume-plugin-dir. Omit staticPodPath.
 apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
 kind: KubeadmConfigTemplate
 metadata:

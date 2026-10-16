@@ -10,7 +10,7 @@
 
 pack:
   name: baremetal-hcs
-  version: "0.1.4-draft"
+  version: "0.1.5-draft"
   status: draft
   acp_version: v4.4.1
   namespace: cpaas-system
@@ -36,10 +36,10 @@ release:
   containerd: 2.2.8-3                  # not 2.2.6-3
   pause: "3.10"
   kube_ovn: v4.4.12                    # not v4.4.6
-  core_package: installer-core-v4.4.1-hybrid.tar
-  kubeadm_provider_package: cluster-api-provider-kubeadm.ALL.v1.0.14.tgz
+  core_package: installer-core-v4.4.1-hybrid.tar          # <ACP_4_4_1_HYBRID_CORE_PACKAGE>
+  kubeadm_provider_package: cluster-api-provider-kubeadm.ALL.v1.0.14.tgz  # <KUBEADM_PROVIDER_ALL_PACKAGE>
   kubeadm_provider_chart: v1.0.14       # <KUBEADM_PROVIDER_CHART_VERSION>  AppRelease targetRevision
-  baremetal_provider_package: cluster-api-provider-baremetal.ALL.v1.0.0-beta.6.ge76cf8f8.tgz
+  baremetal_provider_package: cluster-api-provider-baremetal.ALL.v1.0.0-beta.6.ge76cf8f8.tgz  # <BAREMETAL_PROVIDER_ALL_MULTIARCH_PACKAGE>
   baremetal_provider_chart: v1.0.0-beta.6.ge76cf8f8  # <BAREMETAL_PROVIDER_MULTIARCH_CHART_VERSION>
   kubeos:
     family: KubeOS

@@ -2,6 +2,8 @@
 # ACP 4.4.1 Bare Metal KubeadmControlPlane for a workload cluster.
 # Apply on the finished Global. Cluster name must not be "global".
 # Bare Metal cannot over-provision control-plane machines: maxSurge must stay 0.
+# Kubelet patch includes imagePullCredentialsVerificationPolicy: NeverVerify.
+# Omit staticPodPath (including null). Keep volume-plugin-dir and flex-volume-plugin-dir.
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
 kind: KubeadmControlPlane
 metadata:
