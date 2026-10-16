@@ -1,0 +1,15 @@
+# APPLY-ON: finished Global   kubeconfig: global-kubeconfig
+# Apply after workload worker hosts have left Live ISO and are Ready=True.
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: MachineInventoryPool
+metadata:
+  name: hcs-workloadcluster-arm64-worker-pool
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: hcs-workloadcluster
+spec:
+  clusterName: hcs-workloadcluster
+  machineInventories:
+    - name: <WORKLOAD_ARM64_WORKER_INVENTORY>
+      hostname: hcs-workloadcluster-arm64-worker-1
+      networkDevice: <NETWORK_DEVICE>

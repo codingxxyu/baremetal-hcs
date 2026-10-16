@@ -1,0 +1,43 @@
+# APPLY-ON: bootstrap (minialauda)
+# Apply on the bootstrap cluster after packtool has pushed the Kubeadm provider chart.
+# Chart-internal global.cluster.type must stay Baremetal for every IaaS, including Bare Metal.
+apiVersion: operator.alauda.io/v1alpha1
+kind: AppRelease
+metadata:
+  annotations:
+    auto-recycle: "true"
+    interval-sync: "true"
+  name: cluster-api-provider-kubeadm
+  namespace: cpaas-system
+spec:
+  destination:
+    cluster: ""
+    namespace: ""
+  source:
+    charts:
+      - name: ait/chart-cluster-api-provider-kubeadm
+        releaseName: cluster-api-provider-kubeadm
+        targetRevision: <KUBEADM_PROVIDER_CHART_VERSION>
+    repoURL: <KIND_REGISTRY_ADDRESS>:11443
+  timeout: 120
+  values:
+    global:
+      albName: global-alb2
+      auth:
+        default_admin: admin@cpaas.io
+      cluster:
+        isGlobal: true
+        name: global
+        networkType: kube-ovn
+        type: Baremetal
+      host: <BOOTSTRAP_HOST_IP>
+      ingress:
+        ingressClassName: global-alb2
+      labelBaseDomain: cpaas.io
+      namespace: cpaas-system
+      platformUrl: https://<BOOTSTRAP_HOST_IP>
+      region: global
+      registry:
+        address: <KIND_REGISTRY_ADDRESS>:11443
+      replicas: 1
+      scheme: https

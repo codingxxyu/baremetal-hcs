@@ -1,0 +1,77 @@
+# APPLY-ON: bootstrap (minialauda)
+# Apply on the bootstrap cluster after:
+#   1. Bare Metal OS images are in the bootstrap registry
+#   2. 01-dex-tls-bootstrap.yaml is Ready
+#   3. packtool has pushed the Bare Metal provider chart
+#
+# Fixed single-site baseline. Do not set baremetal.cluster.io/system-agent-server-url
+# on the bootstrap MachineRegistration.
+# platformUrl and elemental.server.url stay on the bootstrap node until handoff.
+# After handoff, apply ../control-plane/08-finished-baremetal-provider-apprelease.yaml instead (platform host, no :12443).
+apiVersion: operator.alauda.io/v1alpha1
+kind: AppRelease
+metadata:
+  annotations:
+    auto-recycle: "true"
+    interval-sync: "true"
+  name: cluster-api-provider-baremetal
+  namespace: cpaas-system
+spec:
+  destination:
+    cluster: ""
+    namespace: ""
+  source:
+    charts:
+      - name: ait/chart-cluster-api-provider-baremetal
+        releaseName: cluster-api-provider-baremetal
+        targetRevision: <BAREMETAL_PROVIDER_MULTIARCH_CHART_VERSION>
+    repoURL: <KIND_REGISTRY_ADDRESS>:11443
+  timeout: 120
+  values:
+    global:
+      albName: global-alb2
+      auth:
+        default_admin: admin@cpaas.io
+      cluster:
+        isGlobal: true
+        name: global
+        networkType: kube-ovn
+        type: Baremetal
+      host: <BOOTSTRAP_HOST_IP>
+      ingress:
+        ingressClassName: global-alb2
+        tls:
+          secretName: dex.tls
+      labelBaseDomain: cpaas.io
+      namespace: cpaas-system
+      platformUrl: https://<BOOTSTRAP_HOST_IP>
+      region: global
+      registry:
+        address: <KIND_REGISTRY_ADDRESS>:11443
+      replicas: 1
+      scheme: https
+    provider:
+      imageCatalog:
+        images:
+          v1.35.6-acp.9_amd64_alaudaos.k.25:
+            repository: tkestack/kubeos-rootfs
+            tag: <K25_AMD64_IMAGE_TAG>
+      handoffHook:
+        directAPIServer: false
+        controlPlaneVIP: <GLOBAL_CONTROL_PLANE_VIP>
+        delivery:
+          enabled: true
+          mode: always
+    elemental:
+      server:
+        url: https://<BOOTSTRAP_HOST_IP>:12443
+      systemAgent:
+        authMode: shared
+        splitAuthEnabled: false
+        serviceAccountName: baremetal-system-agent
+        globalServiceAccountName: baremetal-global-system-agent
+        sharedAuthReadOnly: false
+      tls:
+        agentTLSMode: strict
+        caCertSecretName: dex.tls
+        caCertSecretKey: ca.crt

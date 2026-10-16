@@ -1,0 +1,60 @@
+# APPLY-ON: bootstrap (minialauda)
+# Apply on the bootstrap cluster AFTER the Bare Metal provider is Ready
+# and elemental-image-catalog contains v1.35.6-acp.9_amd64_alaudaos.k.25.
+# This ISO belongs to bootstrap. Do not reuse it after handoff.
+# Worker hosts use the numbered workload files.
+#
+# Gate is status.downloadURL non-empty (condition type is Ready or SeedImageReady).
+# spec.size 20Gi needs a default StorageClass on minialauda. PVC Pending = ISO never builds.
+# MachineRegistration status.registrationURL is a credential — do not commit it.
+# Official Global Step 4 YAML is a fragment. This file is the complete
+# Registration + SeedImage shape (create-cluster reference), not that fragment.
+apiVersion: elemental.cattle.io/v1beta1
+kind: MachineRegistration
+metadata:
+  name: global-registration
+  namespace: cpaas-system
+  labels:
+    app.kubernetes.io/part-of: cluster-api-provider-baremetal
+    cpaas.io/cluster-name: global
+spec:
+  machineName: "global-${System Information/UUID}"
+  machineInventoryLabels:
+    app.kubernetes.io/part-of: cluster-api-provider-baremetal
+    pool.baremetal.alauda.io/eligible: "true"
+    elemental.cattle.io/serial-number: "${System Information/Serial Number}"
+    cpaas.io/cluster-name: global
+    os.baremetal.alauda.io/id: alaudaos.k.25
+    os.baremetal.alauda.io/arch: "${Runtime/Architecture}"
+  machineInventoryAnnotations:
+    elemental.cattle.io/machine-uuid: "${System Information/UUID}"
+  config:
+    elemental:
+      install:
+        device: /dev/elemental-install-target
+        system-uri: <BOOTSTRAP_HOST_IP>:11443/tkestack/kubeos-rootfs:<K25_AMD64_IMAGE_TAG>
+        eject-cd: true
+        reboot: true
+      registration:
+        emulate-tpm: true
+        emulated-tpm-seed: -1
+---
+apiVersion: elemental.cattle.io/v1beta1
+kind: SeedImage
+metadata:
+  name: global-registration-iso
+  namespace: cpaas-system
+  labels:
+    app.kubernetes.io/part-of: cluster-api-provider-baremetal
+    cpaas.io/cluster-name: global
+spec:
+  type: iso
+  baseImage: <KIND_REGISTRY_ADDRESS>:11443/tkestack/kubeos-iso:<K25_AMD64_IMAGE_TAG>
+  registrationRef:
+    apiVersion: elemental.cattle.io/v1beta1
+    kind: MachineRegistration
+    name: global-registration
+    namespace: cpaas-system
+  targetPlatform: linux/amd64
+  size: 20Gi
+  cleanupAfterMinutes: 120

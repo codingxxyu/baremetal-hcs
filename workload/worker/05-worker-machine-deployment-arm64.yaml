@@ -1,0 +1,41 @@
+# APPLY-ON: finished Global   kubeconfig: global-kubeconfig
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachineDeployment
+metadata:
+  name: hcs-workloadcluster-arm64-worker-deployment
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: hcs-workloadcluster
+spec:
+  clusterName: hcs-workloadcluster
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      cluster.x-k8s.io/deployment-name: hcs-workloadcluster-arm64-worker-deployment
+  template:
+    metadata:
+      labels:
+        cluster.x-k8s.io/deployment-name: hcs-workloadcluster-arm64-worker-deployment
+        cluster.x-k8s.io/cluster-name: hcs-workloadcluster
+        pool.name: hcs-workloadcluster-arm64-workers
+    spec:
+      clusterName: hcs-workloadcluster
+      version: v1.35.6-acp.9
+      nodeDrainTimeout: 5m
+      nodeVolumeDetachTimeout: 5m
+      bootstrap:
+        configRef:
+          apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+          kind: KubeadmConfigTemplate
+          name: hcs-workloadcluster-arm64-worker-kubeadm-config
+          namespace: cpaas-system
+      infrastructureRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: BaremetalMachineTemplate
+        name: hcs-workloadcluster-arm64-worker-template
+        namespace: cpaas-system

@@ -1,0 +1,25 @@
+# APPLY-ON: bootstrap (minialauda)  — first create only
+# Cluster and BaremetalCluster MUST be named exactly global.
+#
+# First apply: cpaas.io/registry-address is NODE_REGISTRY_ADDRESS <BOOTSTRAP_HOST_IP>:11443
+# (physical nodes pull OS from the bootstrap registry during first install).
+# Official installer rewrites Cluster / DCSCluster only — NOT BaremetalCluster.
+# After installer Success, patch THIS object to REGISTRY_DOMAIN <PLATFORM_REGISTRY>:11443
+# (do not re-apply the whole file; a re-apply can wipe the live LB host).
+# spec.controlPlaneLoadBalancer.host is <GLOBAL_CONTROL_PLANE_VIP> (TCP 6443 AND the platform VIP).
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: BaremetalCluster
+metadata:
+  name: global
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: global
+  annotations:
+    cpaas.io/registry-address: <BOOTSTRAP_HOST_IP>:11443
+spec:
+  controlPlaneLoadBalancer:
+    type: External
+    host: <GLOBAL_CONTROL_PLANE_VIP>
+    port: 6443
+  networkType: kube-ovn
+  networkDevice: <NETWORK_DEVICE>

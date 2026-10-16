@@ -1,0 +1,75 @@
+# APPLY-ON: finished Global   kubeconfig: global-kubeconfig
+# Do NOT apply on minialauda. Do NOT import bootstrap dex.tls.
+#
+# installer console.cert.selfSigned produces dex.tls with tls.crt + tls.key only.
+# elemental-operator fails if caCertSecretKey is still ca.crt:
+#   MountVolume.SetUp failed ... non-existent secret key: ca.crt
+# Confirm keys first:
+#   kubectl --kubeconfig global-kubeconfig -n cpaas-system get secret dex.tls -o jsonpath='{.data}'
+# If the Secret has ca.crt (cert-manager), change the key below back to ca.crt.
+#
+# After this file, new Registration / ISO use the platform domain, not the bootstrap node.
+apiVersion: operator.alauda.io/v1alpha1
+kind: AppRelease
+metadata:
+  annotations:
+    auto-recycle: "true"
+    interval-sync: "true"
+  name: cluster-api-provider-baremetal
+  namespace: cpaas-system
+spec:
+  destination:
+    cluster: ""
+    namespace: ""
+  source:
+    charts:
+      - name: ait/chart-cluster-api-provider-baremetal
+        releaseName: cluster-api-provider-baremetal
+        targetRevision: <BAREMETAL_PROVIDER_MULTIARCH_CHART_VERSION>
+    repoURL: <PLATFORM_REGISTRY>:11443
+  timeout: 120
+  values:
+    global:
+      albName: global-alb2
+      auth:
+        default_admin: admin@cpaas.io
+      cluster:
+        isGlobal: true
+        name: global
+        networkType: kube-ovn
+        type: Baremetal
+      host: <PLATFORM_HOST>
+      ingress:
+        ingressClassName: global-alb2
+        tls:
+          secretName: dex.tls
+      labelBaseDomain: cpaas.io
+      namespace: cpaas-system
+      platformUrl: https://<PLATFORM_HOST>
+      region: global
+      registry:
+        address: <PLATFORM_REGISTRY>:11443
+      replicas: 1
+      scheme: https
+    provider:
+      imageCatalog:
+        images:
+          v1.35.6-acp.9_amd64_alaudaos.k.25:
+            repository: tkestack/kubeos-rootfs
+            tag: <K25_AMD64_IMAGE_TAG>
+          v1.35.6-acp.9_arm64_alaudaos.k.25:
+            repository: tkestack/kubeos-rootfs
+            tag: <K25_ARM64_IMAGE_TAG>
+    elemental:
+      server:
+        url: https://<PLATFORM_HOST>
+      systemAgent:
+        authMode: shared
+        splitAuthEnabled: false
+        serviceAccountName: baremetal-system-agent
+        globalServiceAccountName: baremetal-global-system-agent
+        sharedAuthReadOnly: false
+      tls:
+        agentTLSMode: strict
+        caCertSecretName: dex.tls
+        caCertSecretKey: tls.crt

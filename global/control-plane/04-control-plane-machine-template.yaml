@@ -1,0 +1,13 @@
+# APPLY-ON: bootstrap (minialauda)
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: BaremetalMachineTemplate
+metadata:
+  name: global-control-plane-template
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: global
+spec:
+  template:
+    spec:
+      machineInventoryPoolRef:
+        name: global-control-plane-pool

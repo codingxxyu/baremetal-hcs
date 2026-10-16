@@ -1,0 +1,36 @@
+# APPLY-ON: finished Global   kubeconfig: global-kubeconfig
+# cpaas.io/registry-address is REGISTRY_DOMAIN <PLATFORM_REGISTRY>:11443 (platform registry
+# on the Global VIP after handoff). Never 127.0.0.1 / 172.18.0.1 / <BOOTSTRAP_HOST_IP>.
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: hcs-workloadcluster
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: hcs-workloadcluster
+    cluster-type: ProviderBaremetal
+  annotations:
+    capi.cpaas.io/resource-group-version: infrastructure.cluster.x-k8s.io/v1beta1
+    capi.cpaas.io/resource-kind: BaremetalCluster
+    capi.cpaas.io/kubernetes: v1.35.6-acp.9
+    cpaas.io/sentry-deploy-type: Baremetal
+    cpaas.io/alb-address-type: ClusterAddress
+    cpaas.io/kube-ovn-join-cidr: <WORKLOAD_KUBE_OVN_JOIN_CIDR>
+    cpaas.io/kube-ovn-version: v4.4.12
+    cpaas.io/registry-address: <PLATFORM_REGISTRY>:11443
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - <WORKLOAD_POD_CIDR>
+    services:
+      cidrBlocks:
+        - <WORKLOAD_SERVICE_CIDR>
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+    kind: BaremetalCluster
+    name: hcs-workloadcluster
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: KubeadmControlPlane
+    name: hcs-workloadcluster-control-plane

@@ -1,0 +1,41 @@
+# APPLY-ON: bootstrap (minialauda)  — first create only
+# First apply: NODE_REGISTRY_ADDRESS <BOOTSTRAP_HOST_IP>:11443 so Global CP nodes can
+# pull OS from the bootstrap registry. Official installer rewrites THIS Cluster
+# annotation to REGISTRY_DOMAIN <PLATFORM_REGISTRY>:11443. Do NOT re-apply after installer
+# (other live fields / CIDRs). BaremetalCluster is NOT rewritten — patch 03 after
+# Success. Never 127.0.0.1 or 172.18.0.1.
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: global
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: global
+    cluster-type: ProviderBaremetal
+    is-global: "true"
+  annotations:
+    capi.cpaas.io/resource-group-version: infrastructure.cluster.x-k8s.io/v1beta1
+    capi.cpaas.io/resource-kind: BaremetalCluster
+    capi.cpaas.io/kubernetes: v1.35.6-acp.9
+    cpaas.io/sentry-deploy-type: Baremetal
+    cpaas.io/alb-address-type: ClusterAddress
+    cpaas.io/kube-ovn-join-cidr: <GLOBAL_KUBE_OVN_JOIN_CIDR>
+    cpaas.io/kube-ovn-version: v4.4.12
+    cpaas.io/registry-address: <BOOTSTRAP_HOST_IP>:11443
+    cpaas.io/nodes-mode: self-managed
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - <GLOBAL_POD_CIDR>
+    services:
+      cidrBlocks:
+        - <GLOBAL_SERVICE_CIDR>
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+    kind: BaremetalCluster
+    name: global
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: KubeadmControlPlane
+    name: global-kcp

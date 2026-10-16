@@ -1,0 +1,22 @@
+# APPLY-ON: finished Global   kubeconfig: global-kubeconfig
+# Apply only after three workload control-plane hosts have left Live ISO
+# and MachineInventory is Ready=True. Fill names from elemental-register.
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: MachineInventoryPool
+metadata:
+  name: hcs-workloadcluster-control-plane-pool
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: hcs-workloadcluster
+spec:
+  clusterName: hcs-workloadcluster
+  machineInventories:
+    - name: <WORKLOAD_CP_INVENTORY_1>
+      hostname: hcs-workloadcluster-cp-1
+      networkDevice: <NETWORK_DEVICE>
+    - name: <WORKLOAD_CP_INVENTORY_2>
+      hostname: hcs-workloadcluster-cp-2
+      networkDevice: <NETWORK_DEVICE>
+    - name: <WORKLOAD_CP_INVENTORY_3>
+      hostname: hcs-workloadcluster-cp-3
+      networkDevice: <NETWORK_DEVICE>

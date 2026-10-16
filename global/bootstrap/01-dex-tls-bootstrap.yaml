@@ -1,0 +1,70 @@
+# APPLY-ON: bootstrap (minialauda)
+# Apply on the bootstrap cluster BEFORE the Bare Metal provider AppRelease.
+# elemental-operator mounts CA from cpaas-system/dex.tls (tls.crt, tls.key, ca.crt).
+# Serving cert must include <BOOTSTRAP_HOST_IP> as an IP SAN for https://<BOOTSTRAP_HOST_IP>:12443.
+# Do not import this Secret into the final global cluster.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: baremetal-bootstrap-selfsigned
+  namespace: cpaas-system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: baremetal-bootstrap-ca
+  namespace: cpaas-system
+spec:
+  secretName: baremetal-bootstrap-ca
+  commonName: baremetal-bootstrap-ca
+  duration: 87600h
+  renewBefore: 720h
+  isCA: true
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  usages:
+    - cert sign
+    - crl sign
+  issuerRef:
+    name: baremetal-bootstrap-selfsigned
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: baremetal-bootstrap-ca
+  namespace: cpaas-system
+spec:
+  ca:
+    secretName: baremetal-bootstrap-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dex-tls-bootstrap
+  namespace: cpaas-system
+spec:
+  secretName: dex.tls
+  commonName: <BOOTSTRAP_HOST_IP>
+  duration: 87600h
+  renewBefore: 720h
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+  ipAddresses:
+    - "<BOOTSTRAP_HOST_IP>"
+    - "127.0.0.1"
+  dnsNames:
+    - global-alb2
+    - global-alb2.cpaas-system.svc
+    - global-alb2.cpaas-system.svc.cluster.local
+  issuerRef:
+    name: baremetal-bootstrap-ca
+    kind: Issuer

@@ -1,0 +1,109 @@
+# HCS Bare Metal ACP 4.4.1 single-site deployment reference.
+# This is the only committed release and environment worksheet in this pack.
+# It is not consumed by a renderer. Copy to config/config.local.yaml (gitignored),
+# then manually replace the matching placeholders in the numbered YAML/JSON files.
+# Never commit passwords, kubeconfigs, ISOs, archives, registration URLs, or keys.
+
+pack:
+  name: baremetal-hcs
+  version: "0.1.0-draft"
+  status: draft-blocked-on-customer-payload
+  acp_version: v4.4.1
+  namespace: cpaas-system
+
+topology:
+  deployment_mode: normal
+  global_control_plane_architecture: amd64
+  global_control_plane_replicas: 3
+  workload_control_plane_architecture: amd64
+  workload_control_plane_replicas: 3
+  workload_worker_architecture: arm64
+  workload_worker_replicas: 1
+  global_worker_replicas: 0
+  load_balancer: External
+
+release:
+  kubernetes: v1.35.6-acp.9
+  coredns: 1.14.7-v4.4.7
+  etcd: v3.6.13-acp.2
+  containerd: 2.2.8-3
+  pause: "3.10"
+  kube_ovn: v4.4.12
+  core_package: <ACP_4_4_1_HYBRID_CORE_PACKAGE>
+  kubeadm_provider_package: <KUBEADM_PROVIDER_ALL_PACKAGE>
+  kubeadm_provider_chart: <KUBEADM_PROVIDER_CHART_VERSION>
+  baremetal_provider_package: <BAREMETAL_PROVIDER_ALL_MULTIARCH_PACKAGE>
+  baremetal_provider_chart: <BAREMETAL_PROVIDER_MULTIARCH_CHART_VERSION>
+  kubeos:
+    family: KubeOS
+    id: alaudaos.k.25
+    rootfs_repository: tkestack/kubeos-rootfs
+    iso_repository: tkestack/kubeos-iso
+    source_tag: baremetal
+    amd64_archive: <ACP_4_4_1_K25_AMD64_ARCHIVE>
+    amd64_image_tag: <K25_AMD64_IMAGE_TAG>
+    amd64_sha256: <K25_AMD64_ARCHIVE_SHA256>
+    amd64_catalog_key: v1.35.6-acp.9_amd64_alaudaos.k.25
+    arm64_archive: <ACP_4_4_1_K25_ARM64_ARCHIVE>
+    arm64_image_tag: <K25_ARM64_IMAGE_TAG>
+    arm64_sha256: <K25_ARM64_ARCHIVE_SHA256>
+    arm64_catalog_key: v1.35.6-acp.9_arm64_alaudaos.k.25
+
+bootstrap:
+  host_ip: <BOOTSTRAP_HOST_IP>
+  local_registry: 127.0.0.1:11443
+  kind_registry: <KIND_REGISTRY_ADDRESS>:11443
+  node_registry: <BOOTSTRAP_HOST_IP>:11443
+  elemental_server: https://<BOOTSTRAP_HOST_IP>:12443
+  installer_dir: /root/installer
+  packtool: /root/installer/res/amd64/packtool
+
+platform:
+  host: <PLATFORM_HOST>
+  registry: <PLATFORM_REGISTRY>:11443
+  global_control_plane_vip: <GLOBAL_CONTROL_PLANE_VIP>
+  global_control_plane_port: 6443
+  workload_control_plane_vip: <WORKLOAD_CONTROL_PLANE_VIP>
+  workload_control_plane_port: 6443
+  network_device: <NETWORK_DEVICE>
+
+network:
+  global_pod_cidr: <GLOBAL_POD_CIDR>
+  global_service_cidr: <GLOBAL_SERVICE_CIDR>
+  global_kube_ovn_join_cidr: <GLOBAL_KUBE_OVN_JOIN_CIDR>
+  workload_pod_cidr: <WORKLOAD_POD_CIDR>
+  workload_service_cidr: <WORKLOAD_SERVICE_CIDR>
+  workload_kube_ovn_join_cidr: <WORKLOAD_KUBE_OVN_JOIN_CIDR>
+
+ssh:
+  authorized_key: <SSH_AUTHORIZED_KEY>
+
+install:
+  device: /dev/elemental-install-target
+  emulate_tpm: true
+  emulated_tpm_seed: -1
+
+inventory:
+  global_cp_1: <GLOBAL_CP_INVENTORY_1>
+  global_cp_2: <GLOBAL_CP_INVENTORY_2>
+  global_cp_3: <GLOBAL_CP_INVENTORY_3>
+  workload_cp_1: <WORKLOAD_CP_INVENTORY_1>
+  workload_cp_2: <WORKLOAD_CP_INVENTORY_2>
+  workload_cp_3: <WORKLOAD_CP_INVENTORY_3>
+  workload_arm64_worker_1: <WORKLOAD_ARM64_WORKER_INVENTORY>
+
+hosts:
+  global_cp_1_os_disk_wwn: <GLOBAL_CP_1_OS_DISK_WWN>
+  global_cp_2_os_disk_wwn: <GLOBAL_CP_2_OS_DISK_WWN>
+  global_cp_3_os_disk_wwn: <GLOBAL_CP_3_OS_DISK_WWN>
+  workload_cp_1_os_disk_wwn: <WORKLOAD_CP_1_OS_DISK_WWN>
+  workload_cp_2_os_disk_wwn: <WORKLOAD_CP_2_OS_DISK_WWN>
+  workload_cp_3_os_disk_wwn: <WORKLOAD_CP_3_OS_DISK_WWN>
+  workload_arm64_worker_1_os_disk_wwn: <WORKLOAD_ARM64_WORKER_1_OS_DISK_WWN>
+
+installer:
+  admin_username: admin@cpaas.io
+  admin_password_base64: <BASE64_PLATFORM_ADMIN_PASSWORD>
+  registry_username: admin
+  registry_password: <REGISTRY_PASSWORD>
+  registry_password_base64: <BASE64_REGISTRY_PASSWORD>

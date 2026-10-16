@@ -1,0 +1,13 @@
+# APPLY-ON: finished Global   kubeconfig: global-kubeconfig
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: BaremetalMachineTemplate
+metadata:
+  name: hcs-workloadcluster-arm64-worker-template
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: hcs-workloadcluster
+spec:
+  template:
+    spec:
+      machineInventoryPoolRef:
+        name: hcs-workloadcluster-arm64-worker-pool

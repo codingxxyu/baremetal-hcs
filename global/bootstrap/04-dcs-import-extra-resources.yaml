@@ -1,0 +1,57 @@
+# APPLY-ON: bootstrap (minialauda)
+# Apply on the bootstrap cluster AFTER global control-plane nodes are Ready
+# and BEFORE POST /cpaas-installer/api/config/dcs.
+# Name keeps the historical dcs- prefix even for Bare Metal.
+#
+# Fill inventory names AFTER KCP is Ready, from BaremetalMachine (not from memory):
+#   kubectl -n cpaas-system get baremetalmachine -l cluster.x-k8s.io/cluster-name=global \
+#     -o custom-columns='NAME:.metadata.name,INVENTORY:.status.machineInventoryRef.name'
+# Names must match the pool object entries (name:), not the official Step 4
+# fragment's bare name list. This package imports three control-plane
+# inventories plus global-registration only.
+#
+# Do not import SeedImage objects, MachineRegistration token Secrets,
+# Elemental plan Secrets, KubeadmConfig, or kubeadm bootstrap data Secrets.
+# This handoff imports no Secret objects or generated credentials.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dcs-import-extra-resources
+  namespace: cpaas-system
+data:
+  resources.yaml: |
+    resources:
+      - resource: "customresourcedefinitions.apiextensions.k8s.io"
+        names:
+          - baremetalclusters.infrastructure.cluster.x-k8s.io
+          - baremetalmachines.infrastructure.cluster.x-k8s.io
+          - baremetalmachinetemplates.infrastructure.cluster.x-k8s.io
+          - machineinventorypools.infrastructure.cluster.x-k8s.io
+          - machineinventories.elemental.cattle.io
+          - machineregistrations.elemental.cattle.io
+          - seedimages.elemental.cattle.io
+        method: kubectl
+      - resource: "baremetalclusters.infrastructure.cluster.x-k8s.io"
+        names: ["global"]
+        etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/baremetalclusters/cpaas-system/"
+        method: etcdctl
+      - resource: "baremetalmachinetemplates.infrastructure.cluster.x-k8s.io"
+        etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/baremetalmachinetemplates/cpaas-system/"
+        method: etcdctl
+      - resource: "baremetalmachines.infrastructure.cluster.x-k8s.io"
+        etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/baremetalmachines/cpaas-system/"
+        method: etcdctl
+      - resource: "machineinventorypools.infrastructure.cluster.x-k8s.io"
+        etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/machineinventorypools/cpaas-system/"
+        method: etcdctl
+      - resource: "machineinventories.elemental.cattle.io"
+        names:
+          - "<GLOBAL_CP_INVENTORY_1>"
+          - "<GLOBAL_CP_INVENTORY_2>"
+          - "<GLOBAL_CP_INVENTORY_3>"
+        etcdKeyBase: "/registry/elemental.cattle.io/machineinventories/cpaas-system/"
+        method: etcdctl
+      - resource: "machineregistrations.elemental.cattle.io"
+        names: ["global-registration"]
+        etcdKeyBase: "/registry/elemental.cattle.io/machineregistrations/cpaas-system/"
+        method: etcdctl
