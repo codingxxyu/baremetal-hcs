@@ -1,11 +1,11 @@
 {
   "basic": {
-    "username": "admin@cpaas.io",
+    "username": "admin",
     "password": "<BASE64_PLATFORM_ADMIN_PASSWORD>"
   },
   "registry": {
     "domain": "<PLATFORM_REGISTRY>:11443",
-    "username": "Registry",
+    "username": "registry",
     "password": "<BASE64_REGISTRY_PASSWORD>"
   },
   "console": {

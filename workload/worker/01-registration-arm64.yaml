@@ -1,6 +1,7 @@
 # APPLY-ON: finished Global   kubeconfig: global-kubeconfig
 # HCS qcow2 path only. Do not apply together with 01-registration-seedimage-arm64.yaml.
 # Same MachineRegistration name as the ISO file: hcs-workloadcluster-arm64-worker-registration.
+# install.device is /dev/vda (HCS virtio). Physical ISO files keep /dev/elemental-install-target.
 # No SeedImage. Gate is status.registrationURL, then curl the config into cloud-init.
 apiVersion: elemental.cattle.io/v1beta1
 kind: MachineRegistration
@@ -24,7 +25,7 @@ spec:
   config:
     elemental:
       install:
-        device: /dev/elemental-install-target
+        device: /dev/vda
         system-uri: <PLATFORM_REGISTRY>:11443/tkestack/kubeos-rootfs:<K25_ARM64_IMAGE_TAG>
         eject-cd: true
         reboot: true

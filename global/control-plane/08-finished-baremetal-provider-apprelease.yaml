@@ -32,7 +32,7 @@ spec:
     global:
       albName: global-alb2
       auth:
-        default_admin: admin@cpaas.io
+        default_admin: admin
       cluster:
         isGlobal: true
         name: global

@@ -13,10 +13,7 @@ spec:
   machineInventories:
     - name: <WORKLOAD_CP_INVENTORY_1>
       hostname: hcs-workloadcluster-cp-1
-      networkDevice: <NETWORK_DEVICE>
     - name: <WORKLOAD_CP_INVENTORY_2>
       hostname: hcs-workloadcluster-cp-2
-      networkDevice: <NETWORK_DEVICE>
     - name: <WORKLOAD_CP_INVENTORY_3>
       hostname: hcs-workloadcluster-cp-3
-      networkDevice: <NETWORK_DEVICE>

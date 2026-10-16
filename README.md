@@ -35,8 +35,8 @@ Kube-OVN     v4.4.12
 OS           alaudaos.k.25
 rootfs       tkestack/kubeos-rootfs
 ISO          tkestack/kubeos-iso
-平台账号     admin@cpaas.io
-仓库账号     Registry
+平台账号     admin
+仓库账号     registry
 ```
 
 Catalog key：
@@ -152,7 +152,7 @@ HCS 虚拟机 Bare Metal 另加：
 | `<PLATFORM_REGISTRY>` | installer registry、成品 Global 上的 provider、Workload 全部 registry。installer 成功后才往这里推 |
 | `<GLOBAL_CONTROL_PLANE_VIP>` | 引导集群上的 Bare Metal provider、Global BaremetalCluster、Global KCP etcd SAN、installer `features.ha.vip` |
 | `<WORKLOAD_CONTROL_PLANE_VIP>` | Workload BaremetalCluster、Workload KCP etcd SAN |
-| `<NETWORK_DEVICE>` | 所有 inventory pool、两个 BaremetalCluster |
+| `<NETWORK_DEVICE>` | 两个 BaremetalCluster 的 `spec.networkDevice`。Pool 条目不要写这个字段 |
 | `<GLOBAL_POD_CIDR>` `<GLOBAL_SERVICE_CIDR>` `<GLOBAL_KUBE_OVN_JOIN_CIDR>` | Global Cluster、installer JSON |
 | `<WORKLOAD_POD_CIDR>` `<WORKLOAD_SERVICE_CIDR>` `<WORKLOAD_KUBE_OVN_JOIN_CIDR>` | Workload Cluster |
 | `<SSH_AUTHORIZED_KEY>` | Global KCP、Workload KCP、ARM Worker KubeadmConfigTemplate；HCS 场景 cloud-init `boot` 用户用同一把 |
@@ -163,8 +163,8 @@ HCS 虚拟机 Bare Metal 另加：
 | `<GLOBAL_CP_INVENTORY_1/2/3>` | Global pool、导入清单。装完机后再填实际名称 |
 | `<WORKLOAD_CP_INVENTORY_1/2/3>` | Workload 控制面 pool。装完机后再填实际名称 |
 | `<WORKLOAD_ARM64_WORKER_INVENTORY>` | ARM Worker pool。装完机后再填实际名称 |
-| `Registry` / `<BASE64_REGISTRY_PASSWORD>` | installer JSON 的仓库账号。用户名必须是 `Registry`，不是 `admin` |
-| `admin@cpaas.io` / `<BASE64_PLATFORM_ADMIN_PASSWORD>` | installer JSON 的平台账号，不是仓库账号 |
+| `registry` / `<BASE64_REGISTRY_PASSWORD>` | installer JSON 的仓库账号。本场用 `registry` |
+| `admin` / `<BASE64_PLATFORM_ADMIN_PASSWORD>` | installer JSON 的平台账号，控制台登录也是这个 |
 
 CIDR 六段必须互不重叠，也不要和管理网重叠。Join 用独立网段，不要写成 Pod/Service 的子集。
 
@@ -217,7 +217,7 @@ printf '%s' "$REGPLAIN" | base64 | tr -d '\n'; echo
 # 明文自己另存，第 3 章和各场景推平台仓库时 ctr push 要用；不要提交
 ```
 
-仓库用户名固定 `Registry`。平台用户名固定 `admin@cpaas.io`。
+仓库用户名本场是 `registry`。平台用户名本场是 `admin`。
 
 ---
 
@@ -407,7 +407,8 @@ HCS 虚拟机不支持挂载 ISO 启动，所以用研发提供的 qcow2 系统�
 | 变量 | 写在哪 |
 |---|---|
 | `<BOOTSTRAP_HOST_IP>` | `spec.config.elemental.install.system-uri` 的仓库主机 |
-| `<K25_AMD64_IMAGE_TAG>` | 同一行的 tag |
+| `<K25_AMD64_IMAGE_TAG>` | 同一行的 tag。本场成功值 `alaudaos-44.ku.202610100215-0.x86_64`，仍以 `ctr images ls` 为准 |
+| `/dev/vda` | `install.device`。HCS 虚机固定这个，不要写成 `/dev/elemental-install-target` |
 
 ```bash
 grep -nE '<[^>]+>' "$PACK_DIR/global/control-plane/01-registration-amd64.yaml"
@@ -488,7 +489,6 @@ kubectl -n cpaas-system get machineinventory -o wide
 | `<GLOBAL_CP_INVENTORY_1>` | `spec.machineInventories[0].name` |
 | `<GLOBAL_CP_INVENTORY_2>` | `spec.machineInventories[1].name` |
 | `<GLOBAL_CP_INVENTORY_3>` | `spec.machineInventories[2].name` |
-| `<NETWORK_DEVICE>` | 三个条目的 `networkDevice` |
 
 hostname 保持 `global-cp-1` / `global-cp-2` / `global-cp-3`。
 
@@ -614,10 +614,10 @@ cp "$PACK_DIR/global/bootstrap/05-installer-config.example.json" \
 
 | 变量 | JSON 字段 |
 |---|---|
-| `admin@cpaas.io` | `basic.username`，不要改 |
+| `admin` | `basic.username` |
 | `<BASE64_PLATFORM_ADMIN_PASSWORD>` | `basic.password` |
 | `<PLATFORM_REGISTRY>` | `registry.domain`，写成 `<PLATFORM_REGISTRY>:11443` |
-| `Registry` | `registry.username`，不要写成 `admin` |
+| `registry` | `registry.username` |
 | `<BASE64_REGISTRY_PASSWORD>` | `registry.password` |
 | `<PLATFORM_HOST>` | `console.host[0]`、`console.globalHost`。不要带 `https://`，不要带端口 |
 | `<GLOBAL_POD_CIDR>` | `cluster.clusterCIDR` |
@@ -713,7 +713,7 @@ kubectl --kubeconfig "$GLOBAL_KUBECONFIG" -n cpaas-system annotate baremetalclus
 
 ### 7.2 推 amd64 OS 到平台仓库
 
-按现场策略配置平台仓库证书信任，不要关 TLS 校验。用户名是 `Registry`，密码是 1.4 生成的明文（不是 base64）。
+按现场策略配置平台仓库证书信任，不要关 TLS 校验。用户名是 `registry`，密码是 1.4 生成的明文（不是 base64）。
 
 ```bash
 export OS_TAG=<K25_AMD64_IMAGE_TAG>
@@ -721,7 +721,7 @@ export REGISTRY=<PLATFORM_REGISTRY>:11443
 ctr -n bare-metal-os images ls -q | grep "$OS_TAG"
 for repo in kubeos-rootfs kubeos-iso; do
   ctr -n bare-metal-os images push \
-    -u "Registry:<REGISTRY_PASSWORD>" \
+    -u "registry:<REGISTRY_PASSWORD>" \
     "$REGISTRY/tkestack/${repo}:${OS_TAG}" \
     "${repo}:${OS_TAG}"
 done
@@ -745,7 +745,7 @@ for repo in kubeos-rootfs kubeos-iso; do
   ctr -n bare-metal-os images tag \
     "${repo}:baremetal" "${repo}:${OS_TAG}"
   ctr -n bare-metal-os images push \
-    -u "Registry:<REGISTRY_PASSWORD>" \
+    -u "registry:<REGISTRY_PASSWORD>" \
     "$REGISTRY/tkestack/${repo}:${OS_TAG}" \
     "${repo}:${OS_TAG}"
 done
@@ -771,7 +771,7 @@ $PACKTOOL pack push -r "<PLATFORM_REGISTRY>:11443" \
   -c /root/<BAREMETAL_PROVIDER_ALL_MULTIARCH_PACKAGE>
 ```
 
-认证参数按 help。仓库账号是 `Registry`。
+认证参数按 help。仓库账号是 `registry`。
 
 ### 7.5 `global/control-plane/07-finished-kubeadm-provider-apprelease.yaml`
 
@@ -899,7 +899,6 @@ kubectl -n cpaas-system get machineinventory -o wide
 | `<WORKLOAD_CP_INVENTORY_1>` | `spec.machineInventories[0].name` |
 | `<WORKLOAD_CP_INVENTORY_2>` | `spec.machineInventories[1].name` |
 | `<WORKLOAD_CP_INVENTORY_3>` | `spec.machineInventories[2].name` |
-| `<NETWORK_DEVICE>` | 三个条目的 `networkDevice` |
 
 hostname 保持 `hcs-workloadcluster-cp-1/2/3`。三个 name 不能重复。如果 API 报 `spec.machineInventories[2].name: Duplicate value`，只改第三个 name，不要删 Cluster。
 
@@ -1011,7 +1010,6 @@ kubectl -n cpaas-system get machineinventory -o wide
 | 变量 | 字段 |
 |---|---|
 | `<WORKLOAD_ARM64_WORKER_INVENTORY>` | `spec.machineInventories[0].name` |
-| `<NETWORK_DEVICE>` | `networkDevice` |
 
 hostname 保持 `hcs-workloadcluster-arm64-worker-1`。
 
@@ -1137,7 +1135,7 @@ kubectl -n cpaas-system get machineregistration global-registration \
 ```bash
 ip -br link
 ip -br addr
-nmcli con add type ethernet ifname <NETWORK_DEVICE> con-name mgmt \
+nmcli con add type ethernet ifname <这台机器网卡名> con-name mgmt \
   ipv4.method manual \
   ipv4.addresses <这台机器管理地址>/<前缀> \
   ipv4.gateway <网关> \
@@ -1203,7 +1201,6 @@ kubectl -n cpaas-system get machineinventory -o wide
 | `<GLOBAL_CP_INVENTORY_1>` | `spec.machineInventories[0].name` |
 | `<GLOBAL_CP_INVENTORY_2>` | `spec.machineInventories[1].name` |
 | `<GLOBAL_CP_INVENTORY_3>` | `spec.machineInventories[2].name` |
-| `<NETWORK_DEVICE>` | 三个条目的 `networkDevice` |
 
 hostname 保持 `global-cp-1` / `global-cp-2` / `global-cp-3`。
 
@@ -1329,10 +1326,10 @@ cp "$PACK_DIR/global/bootstrap/05-installer-config.example.json" \
 
 | 变量 | JSON 字段 |
 |---|---|
-| `admin@cpaas.io` | `basic.username`，不要改 |
+| `admin` | `basic.username` |
 | `<BASE64_PLATFORM_ADMIN_PASSWORD>` | `basic.password` |
 | `<PLATFORM_REGISTRY>` | `registry.domain`，写成 `<PLATFORM_REGISTRY>:11443` |
-| `Registry` | `registry.username`，不要写成 `admin` |
+| `registry` | `registry.username` |
 | `<BASE64_REGISTRY_PASSWORD>` | `registry.password` |
 | `<PLATFORM_HOST>` | `console.host[0]`、`console.globalHost`。不要带 `https://`，不要带端口 |
 | `<GLOBAL_POD_CIDR>` | `cluster.clusterCIDR` |
@@ -1428,7 +1425,7 @@ kubectl --kubeconfig "$GLOBAL_KUBECONFIG" -n cpaas-system annotate baremetalclus
 
 ### 12.2 推 amd64 OS 到平台仓库
 
-按现场策略配置平台仓库证书信任，不要关 TLS 校验。用户名是 `Registry`，密码是 1.4 生成的明文（不是 base64）。
+按现场策略配置平台仓库证书信任，不要关 TLS 校验。用户名是 `registry`，密码是 1.4 生成的明文（不是 base64）。
 
 ```bash
 export OS_TAG=<K25_AMD64_IMAGE_TAG>
@@ -1436,7 +1433,7 @@ export REGISTRY=<PLATFORM_REGISTRY>:11443
 ctr -n bare-metal-os images ls -q | grep "$OS_TAG"
 for repo in kubeos-rootfs kubeos-iso; do
   ctr -n bare-metal-os images push \
-    -u "Registry:<REGISTRY_PASSWORD>" \
+    -u "registry:<REGISTRY_PASSWORD>" \
     "$REGISTRY/tkestack/${repo}:${OS_TAG}" \
     "${repo}:${OS_TAG}"
 done
@@ -1460,7 +1457,7 @@ for repo in kubeos-rootfs kubeos-iso; do
   ctr -n bare-metal-os images tag \
     "${repo}:baremetal" "${repo}:${OS_TAG}"
   ctr -n bare-metal-os images push \
-    -u "Registry:<REGISTRY_PASSWORD>" \
+    -u "registry:<REGISTRY_PASSWORD>" \
     "$REGISTRY/tkestack/${repo}:${OS_TAG}" \
     "${repo}:${OS_TAG}"
 done
@@ -1486,7 +1483,7 @@ $PACKTOOL pack push -r "<PLATFORM_REGISTRY>:11443" \
   -c /root/<BAREMETAL_PROVIDER_ALL_MULTIARCH_PACKAGE>
 ```
 
-认证参数按 help。仓库账号是 `Registry`。
+认证参数按 help。仓库账号是 `registry`。
 
 ### 12.5 `global/control-plane/07-finished-kubeadm-provider-apprelease.yaml`
 
@@ -1631,7 +1628,6 @@ kubectl -n cpaas-system get machineinventory \
 | `<WORKLOAD_CP_INVENTORY_1>` | `spec.machineInventories[0].name` |
 | `<WORKLOAD_CP_INVENTORY_2>` | `spec.machineInventories[1].name` |
 | `<WORKLOAD_CP_INVENTORY_3>` | `spec.machineInventories[2].name` |
-| `<NETWORK_DEVICE>` | 三个条目的 `networkDevice` |
 
 hostname 保持 `hcs-workloadcluster-cp-1/2/3`。三个 name 不能重复。如果 API 报 `spec.machineInventories[2].name: Duplicate value`，只改第三个 name，不要删 Cluster。
 
@@ -1740,7 +1736,6 @@ test -n "$ISO_URL"
 | 变量 | 字段 |
 |---|---|
 | `<WORKLOAD_ARM64_WORKER_INVENTORY>` | `spec.machineInventories[0].name` |
-| `<NETWORK_DEVICE>` | `networkDevice` |
 
 hostname 保持 `hcs-workloadcluster-arm64-worker-1`。
 

@@ -1,11 +1,11 @@
 # APPLY-ON: bootstrap (minialauda)
-# Apply only after three global control-plane hosts have left Live ISO,
-# registered as MachineInventory, and are Ready=True.
+# Apply only after three global control-plane hosts have registered
+# as MachineInventory and are Ready=True (HCS VMs or physical after leaving Live ISO).
 # Inventory names come from elemental-register; replace the placeholders.
 #
 # Official Global Step 4 fragment lists inventory names only
 # (`- global-cp-1`). That is not apply-able. This pool uses the complete
-# Bare Metal create-cluster shape: name + hostname + networkDevice.
+# Bare Metal create-cluster shape: name + hostname.
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: MachineInventoryPool
 metadata:
@@ -18,10 +18,7 @@ spec:
   machineInventories:
     - name: <GLOBAL_CP_INVENTORY_1>
       hostname: global-cp-1
-      networkDevice: <NETWORK_DEVICE>
     - name: <GLOBAL_CP_INVENTORY_2>
       hostname: global-cp-2
-      networkDevice: <NETWORK_DEVICE>
     - name: <GLOBAL_CP_INVENTORY_3>
       hostname: global-cp-3
-      networkDevice: <NETWORK_DEVICE>

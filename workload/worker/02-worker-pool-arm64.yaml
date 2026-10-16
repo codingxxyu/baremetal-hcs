@@ -12,4 +12,3 @@ spec:
   machineInventories:
     - name: <WORKLOAD_ARM64_WORKER_INVENTORY>
       hostname: hcs-workloadcluster-arm64-worker-1
-      networkDevice: <NETWORK_DEVICE>
