@@ -5,7 +5,7 @@
   },
   "registry": {
     "domain": "<PLATFORM_REGISTRY>:11443",
-    "username": "admin",
+    "username": "Registry",
     "password": "<BASE64_REGISTRY_PASSWORD>"
   },
   "console": {

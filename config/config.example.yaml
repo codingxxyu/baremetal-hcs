@@ -104,6 +104,6 @@ hosts:
 installer:
   admin_username: admin@cpaas.io
   admin_password_base64: <BASE64_PLATFORM_ADMIN_PASSWORD>
-  registry_username: admin
+  registry_username: Registry
   registry_password: <REGISTRY_PASSWORD>
   registry_password_base64: <BASE64_REGISTRY_PASSWORD>
