@@ -1,7 +1,6 @@
 # APPLY-ON: finished Global   kubeconfig: global-kubeconfig
 # networkDevice is the CNI NIC. Override a single host on the pool instead.
-# cpaas.io/registry-address is REGISTRY_DOMAIN (<PLATFORM_REGISTRY>:11443) after Global is up.
-# Never 127.0.0.1 / 172.18.0.1 / bootstrap <BOOTSTRAP_HOST_IP>. LB host is Workload VIP <WORKLOAD_CONTROL_PLANE_VIP>.
+# cpaas.io/registry-address is the platform registry. Do not use 127.0.0.1 or the KIND registry.
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: BaremetalCluster
 metadata:

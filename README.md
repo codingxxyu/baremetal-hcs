@@ -51,7 +51,7 @@ export GLOBAL_KUBECONFIG=/path/to/global-kubeconfig
 |---|---|---|---|
 | 第 2–5 章 | CAN / Bootstrap 节点 | `$BOOTSTRAP_KUBECONFIG` | KIND `minialauda` |
 | 物理机装 OS | 对应物理机 BMC / Live ISO | 无 | 该物理机 |
-| 第 6–8 章 | CAN / 运维机 | `$GLOBAL_KUBECONFIG` | Finished Global |
+| 第 6 章起 | CAN / 运维机 | `$GLOBAL_KUBECONFIG` | Finished Global |
 | 第 9 章 | 见各命令 | 见各命令 | 见各命令 |
 
 ### 0.2 对照文件
@@ -183,8 +183,8 @@ kubectl apply -f "$PACK_DIR/global/bootstrap/01-dex-tls-bootstrap.yaml"
 | 变量 | 字段 |
 |---|---|
 | `<KUBEADM_PROVIDER_CHART_VERSION>` | `spec.source.charts[0].targetRevision` |
-| `<KIND_REGISTRY_ADDRESS>` | `spec.source.repoURL`、`values.global.registry.address` |
-| `<BOOTSTRAP_HOST_IP>` | `values.global.host`、`values.global.platformUrl` |
+| `<KIND_REGISTRY_ADDRESS>` | `spec.source.repoURL`、`values.global.registry.address`，写成 `<KIND_REGISTRY_ADDRESS>:11443` |
+| `<BOOTSTRAP_HOST_IP>` | `values.global.host`、`values.global.platformUrl`（`https://<BOOTSTRAP_HOST_IP>`） |
 
 ```bash
 kubectl apply -f "$PACK_DIR/global/bootstrap/02-kubeadm-provider-apprelease.yaml"
@@ -195,8 +195,8 @@ kubectl apply -f "$PACK_DIR/global/bootstrap/02-kubeadm-provider-apprelease.yaml
 | 变量 | 字段 |
 |---|---|
 | `<BAREMETAL_PROVIDER_MULTIARCH_CHART_VERSION>` | `spec.source.charts[0].targetRevision` |
-| `<KIND_REGISTRY_ADDRESS>` | `spec.source.repoURL`、`values.global.registry.address` |
-| `<BOOTSTRAP_HOST_IP>` | `values.global.host`、`values.global.platformUrl`、`values.elemental.server.url` |
+| `<KIND_REGISTRY_ADDRESS>` | `spec.source.repoURL`、`values.global.registry.address`，写成 `<KIND_REGISTRY_ADDRESS>:11443` |
+| `<BOOTSTRAP_HOST_IP>` | `values.global.host`、`values.global.platformUrl`（`https://<BOOTSTRAP_HOST_IP>`）、`values.elemental.server.url`（`https://<BOOTSTRAP_HOST_IP>:12443`） |
 | `<K25_AMD64_IMAGE_TAG>` | `values.provider.imageCatalog.images.v1.35.6-acp.9_amd64_alaudaos.k.25.tag` |
 | `<GLOBAL_CONTROL_PLANE_VIP>` | `values.provider.handoffHook.controlPlaneVIP` |
 
@@ -217,8 +217,8 @@ kubectl -n cpaas-system get apprelease
 
 | 变量 | 字段 |
 |---|---|
-| `<BOOTSTRAP_HOST_IP>` | MachineRegistration `spec.config.elemental.install.system-uri` 的仓库地址 |
-| `<KIND_REGISTRY_ADDRESS>` | SeedImage `spec.baseImage` 的仓库地址 |
+| `<BOOTSTRAP_HOST_IP>` | MachineRegistration `system-uri`，写成 `<BOOTSTRAP_HOST_IP>:11443/tkestack/kubeos-rootfs:<K25_AMD64_IMAGE_TAG>` |
+| `<KIND_REGISTRY_ADDRESS>` | SeedImage `baseImage`，写成 `<KIND_REGISTRY_ADDRESS>:11443/tkestack/kubeos-iso:<K25_AMD64_IMAGE_TAG>` |
 | `<K25_AMD64_IMAGE_TAG>` | `system-uri` 和 `baseImage` 的 tag |
 
 固定值不要改：
@@ -296,11 +296,11 @@ kubectl apply -f "$PACK_DIR/global/control-plane/02-control-plane-pool.yaml"
 
 | 变量 | 字段 |
 |---|---|
-| `<BOOTSTRAP_HOST_IP>` | `metadata.annotations.cpaas.io/registry-address`，首次创建用 Bootstrap 仓库 |
+| `<BOOTSTRAP_HOST_IP>` | `metadata.annotations.cpaas.io/registry-address`，首次创建写成 `<BOOTSTRAP_HOST_IP>:11443` |
 | `<GLOBAL_CONTROL_PLANE_VIP>` | `spec.controlPlaneLoadBalancer.host` |
 | `<NETWORK_DEVICE>` | `spec.networkDevice` |
 
-`type: External`、`port: 6443` 不要改。installer 成功后如果这个对象还停在 Bootstrap 仓库，只 patch annotation，不要重新 apply 整个文件。
+注释里的 `<PLATFORM_REGISTRY>` 只用于 installer 成功后的 patch 目标，首次 apply 不要改成平台仓库。`type: External`、`port: 6443` 不要改。installer 成功后如果这个对象还停在 Bootstrap 仓库，只 patch annotation 到 `<PLATFORM_REGISTRY>:11443`，不要重新 apply 整个文件。
 
 ```bash
 kubectl apply -f "$PACK_DIR/global/control-plane/03-baremetal-cluster.yaml"
@@ -318,12 +318,12 @@ kubectl apply -f "$PACK_DIR/global/control-plane/04-control-plane-machine-templa
 
 | 变量 | 字段 |
 |---|---|
-| `<BOOTSTRAP_HOST_IP>` | `metadata.annotations.cpaas.io/registry-address` |
+| `<BOOTSTRAP_HOST_IP>` | `metadata.annotations.cpaas.io/registry-address`，首次创建写成 `<BOOTSTRAP_HOST_IP>:11443` |
 | `<GLOBAL_KUBE_OVN_JOIN_CIDR>` | `metadata.annotations.cpaas.io/kube-ovn-join-cidr` |
 | `<GLOBAL_POD_CIDR>` | `spec.clusterNetwork.pods.cidrBlocks[0]` |
 | `<GLOBAL_SERVICE_CIDR>` | `spec.clusterNetwork.services.cidrBlocks[0]` |
 
-Kubernetes 版本保持 `v1.35.6-acp.9`，Kube-OVN 保持 `v4.4.12`。installer 会改这个 Cluster 的 registry annotation，成功后不要重新 apply 这个文件。
+注释里的 `<PLATFORM_REGISTRY>` 是 installer 改写后的目标，首次 apply 不要改成平台仓库。Kubernetes 版本保持 `v1.35.6-acp.9`，Kube-OVN 保持 `v4.4.12`。installer 会改这个 Cluster 的 registry annotation，成功后不要重新 apply 这个文件。
 
 ```bash
 kubectl apply -f "$PACK_DIR/global/control-plane/05-cluster.yaml"
@@ -463,8 +463,8 @@ kubectl -n cpaas-system get baremetalcluster global \
 | 变量 | 字段 |
 |---|---|
 | `<KUBEADM_PROVIDER_CHART_VERSION>` | `spec.source.charts[0].targetRevision` |
-| `<PLATFORM_REGISTRY>` | `spec.source.repoURL`、`values.global.registry.address` |
-| `<PLATFORM_HOST>` | `values.global.host`、`values.global.platformUrl` |
+| `<PLATFORM_REGISTRY>` | `spec.source.repoURL`、`values.global.registry.address`，写成 `<PLATFORM_REGISTRY>:11443` |
+| `<PLATFORM_HOST>` | `values.global.host`、`values.global.platformUrl`（`https://<PLATFORM_HOST>`） |
 
 这个文件必须 apply 到 Finished Global，不要 apply 到 `minialauda`。
 
@@ -477,8 +477,8 @@ kubectl apply -f "$PACK_DIR/global/control-plane/07-finished-kubeadm-provider-ap
 | 变量 | 字段 |
 |---|---|
 | `<BAREMETAL_PROVIDER_MULTIARCH_CHART_VERSION>` | `spec.source.charts[0].targetRevision` |
-| `<PLATFORM_REGISTRY>` | `spec.source.repoURL`、`values.global.registry.address` |
-| `<PLATFORM_HOST>` | `values.global.host`、`values.global.platformUrl`、`values.elemental.server.url` |
+| `<PLATFORM_REGISTRY>` | `spec.source.repoURL`、`values.global.registry.address`，写成 `<PLATFORM_REGISTRY>:11443` |
+| `<PLATFORM_HOST>` | `values.global.host`、`values.global.platformUrl`（`https://<PLATFORM_HOST>`）、`values.elemental.server.url`（`https://<PLATFORM_HOST>`，不要加 `:12443`） |
 | `<K25_AMD64_IMAGE_TAG>` | amd64 catalog tag |
 | `<K25_ARM64_IMAGE_TAG>` | arm64 catalog tag |
 
@@ -534,7 +534,7 @@ export KUBECONFIG="$GLOBAL_KUBECONFIG"
 
 | 变量 | 字段 |
 |---|---|
-| `<PLATFORM_REGISTRY>` | `system-uri`、`baseImage` 的仓库地址 |
+| `<PLATFORM_REGISTRY>` | `system-uri`、`baseImage` 的仓库地址，写成 `<PLATFORM_REGISTRY>:11443` |
 | `<K25_AMD64_IMAGE_TAG>` | `system-uri`、`baseImage` 的 tag |
 
 固定值：
@@ -599,7 +599,7 @@ kubectl apply -f "$PACK_DIR/workload/control-plane/02-control-plane-pool.yaml"
 
 | 变量 | 字段 |
 |---|---|
-| `<PLATFORM_REGISTRY>` | `metadata.annotations.cpaas.io/registry-address` |
+| `<PLATFORM_REGISTRY>` | `metadata.annotations.cpaas.io/registry-address`，写成 `<PLATFORM_REGISTRY>:11443` |
 | `<WORKLOAD_CONTROL_PLANE_VIP>` | `spec.controlPlaneLoadBalancer.host` |
 | `<NETWORK_DEVICE>` | `spec.networkDevice` |
 
@@ -621,7 +621,7 @@ kubectl apply -f "$PACK_DIR/workload/control-plane/04-control-plane-machine-temp
 
 | 变量 | 字段 |
 |---|---|
-| `<PLATFORM_REGISTRY>` | `metadata.annotations.cpaas.io/registry-address` |
+| `<PLATFORM_REGISTRY>` | `metadata.annotations.cpaas.io/registry-address`，写成 `<PLATFORM_REGISTRY>:11443` |
 | `<WORKLOAD_KUBE_OVN_JOIN_CIDR>` | `metadata.annotations.cpaas.io/kube-ovn-join-cidr` |
 | `<WORKLOAD_POD_CIDR>` | `spec.clusterNetwork.pods.cidrBlocks[0]` |
 | `<WORKLOAD_SERVICE_CIDR>` | `spec.clusterNetwork.services.cidrBlocks[0]` |
@@ -654,7 +654,7 @@ kubectl get machines -l cluster.x-k8s.io/cluster-name=hcs-workloadcluster -o wid
 
 | 变量 | 字段 |
 |---|---|
-| `<PLATFORM_REGISTRY>` | `system-uri`、`baseImage` 的仓库地址 |
+| `<PLATFORM_REGISTRY>` | `system-uri`、`baseImage` 的仓库地址，写成 `<PLATFORM_REGISTRY>:11443` |
 | `<K25_ARM64_IMAGE_TAG>` | `system-uri`、`baseImage` 的 tag |
 
 固定值：

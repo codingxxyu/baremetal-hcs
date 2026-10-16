@@ -1,6 +1,6 @@
 # APPLY-ON: finished Global   kubeconfig: global-kubeconfig
-# cpaas.io/registry-address is REGISTRY_DOMAIN <PLATFORM_REGISTRY>:11443 (platform registry
-# on the Global VIP after handoff). Never 127.0.0.1 / 172.18.0.1 / <BOOTSTRAP_HOST_IP>.
+# cpaas.io/registry-address is the platform registry after Global handoff.
+# Do not use 127.0.0.1 or the KIND registry.
 apiVersion: cluster.x-k8s.io/v1beta1
 kind: Cluster
 metadata:
