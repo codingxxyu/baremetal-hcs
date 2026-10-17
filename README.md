@@ -1,6 +1,20 @@
 # HCS Bare Metal ACP 4.4.1 交付手册
 
-固定拓扑、单站点、YAML-only。对照文件只有 `config/config.example.yaml`。现场选定一种主机形态后按对应模块执行，不要混用两套 Registration。
+固定拓扑、单站点、YAML-only。对照文件只有 `config/config.example.yaml`。选定一种主机形态后只走对应场景，不要混用两套 Registration。
+
+| 现场 | 阅读顺序 |
+|---|---|
+| 共用准备 | 第 0–4 章 |
+| HCS 虚机 | 第 5 章 → 第 6–7 章 → 第 8–9 章 |
+| 同网段物理机 | 第 10 章 → 第 6–7 章 → 第 11–12 章 |
+| 卡住 | 第 13 章 |
+
+Inventory `Ready=True` 之后，Pool / Cluster / KCP / MachineDeployment 的 YAML 两场景相同（第 5.4–5.9、8.4–8.8、9.3–9.6 节）。差别只在主机如何注册：
+
+- HCS：`01-registration-*.yaml`（不要 SeedImage）。闸门是 `status.registrationURL`。
+- 物理机：`01-registration-seedimage-*.yaml`。闸门是 SeedImage `status.downloadURL`。
+
+两份 Registration **同名**，禁止同时 apply。裸金属现场不要因为 5.4 写在场景一标题下而跳过：那几节是共用 apply 步骤。
 
 ## 0. 范围与约定
 
@@ -8,22 +22,9 @@
 |---|---|
 | Global | 3 台 amd64 控制面，无 Global Worker |
 | Workload | 3 台 amd64 控制面 + 1 台 arm64 Worker |
-| 集群名 | Global 必须为 `global`。Workload 名可选，对照字段 `workload_cluster_name`，YAML 占位符 `<WORKLOAD_CLUSTER_NAME>`；本场示例为 `workloadcluster`。禁止使用 `global`，且同一场所有 Workload 对象必须用同一个名字 |
+| 集群名 | Global 必须为 `global`。Workload 用 `<WORKLOAD_CLUSTER_NAME>`，对照 `topology.workload_cluster_name`；本场示例 `workloadcluster`。禁止写成 `global`，同一场只许一个名字 |
 | 滚动 | 控制面与 Worker 的 `maxSurge` 一律为 `0` |
 | 负载均衡 | External VIP；不要配置 VRID / Internal LB |
-
-| 场景 | 主机 | 章节 |
-|---|---|---|
-| HCS 虚拟机 Bare Metal | HCS 上的 KubeOS 虚机 | 第 5、8、9 章；交接走第 6–7 章 |
-| 裸金属 Bare Metal | 同网段物理机 | 第 10、11、12 章；交接同样走第 6–7 章 |
-| 运维 | — | 第 13 章 |
-
-第 1–4 章两场景共用。Inventory `Ready=True` 之后，Pool / Cluster / KCP / MachineDeployment 的 YAML 相同。差别只在 Registration：
-
-- HCS：`01-registration-*.yaml`（不要 SeedImage）。闸门是 `status.registrationURL`。
-- 物理机：`01-registration-seedimage-*.yaml`。闸门是 SeedImage `status.downloadURL`。
-
-两份 Registration **同名**，禁止同时 apply。
 
 | 术语 | 含义 |
 |---|---|
@@ -33,7 +34,7 @@
 | 引导仓库 | KIND 嵌入式仓库。本机 `127.0.0.1:11443`，KIND 内常见 `<KIND_REGISTRY_ADDRESS>:11443` |
 | 平台仓库 | installer 起来之后的 `<PLATFORM_REGISTRY>:11443`，永久使用 |
 
-版本与 catalog 以 `config/config.example.yaml` 为准。固定 BOM：
+版本、catalog、账号以 `config/config.example.yaml` 为准。现场核对这些固定值：
 
 ```text
 Kubernetes   v1.35.6-acp.9
@@ -487,6 +488,8 @@ kubectl -n cpaas-system get machineinventory -o wide
 
 ### 5.4 `global/control-plane/02-control-plane-pool.yaml`
 
+5.4–5.9 两场景共用。裸金属在三台 Inventory `Ready=True` 后从 10.4 跳到这里，按同一组文件 apply。
+
 | 变量 | 字段 |
 |---|---|
 | `<GLOBAL_CP_INVENTORY_1>` | `spec.machineInventories[0].name` |
@@ -842,17 +845,33 @@ kubectl -n cpaas-system get configmap elemental-image-catalog \
   -o jsonpath='{.data}'; echo
 ```
 
-ConfigMap 对象不存在时，先查 `08` 是否 Ready。两个 key 都正确后：HCS 场景可拆 KIND 并进入第 8 章；裸金属场景还须确认成品 Global 有默认 StorageClass，再拆 KIND 并进入第 11 章。
+ConfigMap 对象不存在时，先查 `08` 是否 Ready。两个 key 都正确后进入 7.8。裸金属还须确认成品 Global 有默认 StorageClass（后续 Workload SeedImage PVC）。
 
-拆 KIND 之前再核对 Cluster / BaremetalCluster 注解必须是 `<PLATFORM_REGISTRY>:11443`。拆完后 `127.0.0.1` / `<KIND_REGISTRY_ADDRESS>` 会失效。
+### 7.8 拆除 KIND
+
+拆之前再核对 Cluster **和** BaremetalCluster 注解都是 `<PLATFORM_REGISTRY>:11443`。拆完后 `127.0.0.1` / `<KIND_REGISTRY_ADDRESS>` / `$BOOTSTRAP_KUBECONFIG` 失效，只保留 `$GLOBAL_KUBECONFIG`。
+
+```bash
+kubectl --kubeconfig "$GLOBAL_KUBECONFIG" -n cpaas-system \
+  get cluster,baremetalcluster global -o \
+  custom-columns='KIND:.kind,REG:.metadata.annotations.cpaas\.io/registry-address'
+export PATH="/root/installer/res/amd64:${PATH}"
+kind delete cluster --name minialauda
+```
+
+`kind` 不在 PATH 且容器还在时：
+
+```bash
+nerdctl rm -f minialauda-control-plane 2>/dev/null || docker rm -f minialauda-control-plane
+```
+
+HCS 进入第 8 章。裸金属进入第 11 章。
 
 ---
 
 ## 8. Workload：amd64 控制面虚机
 
-本章全部使用 `$GLOBAL_KUBECONFIG`。KIND 已不再使用。不要复用 Global 的 Registration URL 或 cloud-init。不要 apply SeedImage。
-
-先把 `workload/` 下所有 YAML 的 `<WORKLOAD_CLUSTER_NAME>` 换成对照文件里的名字（本场示例 `workloadcluster`）。禁止写成 `global`。同一场只用一个名字。
+本章全部使用 `$GLOBAL_KUBECONFIG`。KIND 已拆除。不要复用 Global 的 Registration URL 或 cloud-init。不要 apply SeedImage。`<WORKLOAD_CLUSTER_NAME>` 在 apply 前整包替换，规则见第 0 章。
 
 ```bash
 export KUBECONFIG="$GLOBAL_KUBECONFIG"
@@ -900,6 +919,8 @@ kubectl -n cpaas-system get machineinventory -o wide
 三个名称必须互不相同，且三个 inventory `Ready=True`。
 
 ### 8.4 `workload/control-plane/02-control-plane-pool.yaml`
+
+8.4–8.8 两场景共用。裸金属在三台 Inventory `Ready=True` 后从 11.4 跳到这里。
 
 | 变量 | 字段 |
 |---|---|
@@ -1008,6 +1029,8 @@ kubectl -n cpaas-system get machineinventory -o wide
 
 ### 9.3 `workload/worker/02-worker-pool-arm64.yaml`
 
+9.3–9.6 两场景共用。裸金属在 ARM Inventory `Ready=True` 后从 12.3 跳到这里。
+
 | 变量 | 字段 |
 |---|---|
 | `<WORKLOAD_ARM64_WORKER_INVENTORY>` | `spec.machineInventories[0].name` |
@@ -1067,11 +1090,11 @@ kubectl get machines -l cluster.x-k8s.io/cluster-name=<WORKLOAD_CLUSTER_NAME> -o
 
 # 场景二：裸金属 Bare Metal
 
-本场景全部为同网段物理机。不要 apply 任何仅 Registration 的 `01-registration-amd64.yaml` / `01-registration-arm64.yaml`。不要使用 qcow2 / cloud-init。
+本场景全部为同网段物理机。不要 apply 仅 Registration 的 `01-registration-amd64.yaml` / `01-registration-arm64.yaml`。不要使用 qcow2 / cloud-init。
 
-第 1–4 章完成后从第 10 章继续。kubeconfig 仍是 `$BOOTSTRAP_KUBECONFIG`。KIND 必须有默认 StorageClass。
+第 1–4 章完成后从第 10 章继续。kubeconfig 仍是 `$BOOTSTRAP_KUBECONFIG`。KIND 必须有默认 StorageClass。Pool / Cluster / KCP 的 apply 写在 5.4–5.9、8.4–8.8、9.3–9.6；那些小节虽在场景一标题下，裸金属同样执行。
 
-Global 控制面 Ready 后，交接、installer、平台仓库 **执行第 6–7 章**（与 HCS 同一套 YAML 和命令）。完成后进入第 11 章。
+Global 控制面 Ready 后执行第 6–7 章（与 HCS 同一套 YAML 和命令），再进入第 11 章。
 
 ---
 
@@ -1210,15 +1233,15 @@ global/control-plane/05-cluster.yaml
 global/control-plane/06-kubeadm-control-plane.yaml
 ```
 
-占位符表、固定值与 apply 命令见 5.4–5.9。installer Success 后若 BaremetalCluster 仍指向引导仓库，按 **7.1** patch，不要重新 apply 整个 `03`。
+按 **5.4–5.9** 的占位符表、固定值和 apply 命令执行（含抽出 `global-kubeconfig`）。installer Success 后若 BaremetalCluster 仍指向引导仓库，按 **7.1** patch，不要重新 apply 整个 `03`。
 
-抽出 `global-kubeconfig` 后进入第 6 章，再执行第 7 章。第 7.7 节拆 KIND 前，成品 Global 还需要默认 StorageClass（后续 Workload SeedImage PVC）。
+然后进入第 6 章，再执行第 7 章。第 7.8 节拆 KIND 前，成品 Global 还需要默认 StorageClass（后续 Workload SeedImage PVC）。
 
 ---
 
 ## 11. Workload：amd64 控制面物理机
 
-本章全部使用 `$GLOBAL_KUBECONFIG`。KIND 已不再使用。不要复用 Global 的 ISO。Global 上要有默认 StorageClass。`<WORKLOAD_CLUSTER_NAME>` 与第 8 章同一套规则。
+本章全部使用 `$GLOBAL_KUBECONFIG`。KIND 已拆除。不要复用 Global 的 ISO。Global 上要有默认 StorageClass。`<WORKLOAD_CLUSTER_NAME>` 规则见第 0 章。
 
 ```bash
 export KUBECONFIG="$GLOBAL_KUBECONFIG"
@@ -1298,7 +1321,7 @@ workload/control-plane/05-cluster.yaml
 workload/control-plane/06-kubeadm-control-plane.yaml
 ```
 
-占位符表、固定值与 apply 命令见 8.4–8.8。三个 pool name 不能重复；若 API 报 Duplicate value，只改第三个 name，不要删 Cluster。
+按 **8.4–8.8** 的占位符表、固定值和 apply 命令执行。三个 pool inventory name 不能重复；若 API 报 Duplicate value，只改第三个 name，不要删 Cluster。
 
 ---
 
@@ -1356,7 +1379,7 @@ workload/worker/04-worker-kubeadm-config-template-arm64.yaml
 workload/worker/05-worker-machine-deployment-arm64.yaml
 ```
 
-占位符表、固定值（含 `volume-plugin-dir`、`NeverVerify`、`replicas: 1` / `maxSurge: 0`）与 apply 命令见 9.3–9.6。
+按 **9.3–9.6** 执行（含 `volume-plugin-dir`、`NeverVerify`、`replicas: 1` / `maxSurge: 0`）。
 
 本场景到此结束。运维见第 13 章。
 
@@ -1440,20 +1463,13 @@ pool 也被清掉时，先确认 inventory Ready，再 apply 两个 `02`。已�
 
 HCS 场景重建虚机时，从干净 qcow2 模板再开一台，粘贴同一角色的 cloud-init，不要克隆已注册磁盘。
 
-### 13.4 HCS 虚机：注册日志与扩盘
+### 13.4 登录机器查看 cloud-init / elemental-agent
+
+HCS 虚机额外看预安装日志；根分区未自动扩大时，先 `lsblk` / `findmnt` 确认 `/` 在 `/dev/vda4` 且为 ext4，再按 5.2 扩盘。不要扩 EFI 分区。
 
 ```bash
 sudo less /var/log/cloud-init-output.log
 sudo less /var/log/preinst-register.log
-sudo journalctl -fu elemental-system-agent
-```
-
-根分区未自动扩大时，先 `lsblk` / `findmnt` 确认 `/` 在 `/dev/vda4` 且为 ext4，再按 5.2 扩盘。不要扩 EFI 分区。
-
-### 13.5 登录机器查看 cloud-init / elemental-agent
-
-```bash
-sudo less /var/log/cloud-init-output.log
 sudo journalctl -fu elemental-system-agent
 ```
 
@@ -1475,7 +1491,7 @@ Live ISO 还不能 SSH 时，在 BMC 上查看：
 journalctl -f | grep -Ei 'elemental|register|install|cloud-init' || true
 ```
 
-### 13.6 kubelet / containerd
+### 13.5 kubelet / containerd
 
 ```bash
 sudo journalctl -fu kubelet
@@ -1486,7 +1502,7 @@ sudo systemctl status kubelet containerd
 
 节点上如果已经出现 `"staticPodPath": null`，先改对应 YAML，再按 13.3 重建那台 Machine。
 
-### 13.7 在引导节点查看 cluster-transformer
+### 13.6 查看 cluster-transformer
 
 installer 尚未 Success 时，看引导集群：
 

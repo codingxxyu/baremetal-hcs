@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.7-draft — 2026-10-17
+
+Field-handbook structure pass. YAML objects are unchanged.
+
+- Opening reading-order table: shared 0–4, then scene 5 or 10, then shared 6–7.
+- Pool / Cluster / KCP apply stays in 5.4–5.9, 8.4–8.8, 9.3–9.6; physical chapters now say those sections are shared, not HCS-only.
+- Adds 7.8 KIND teardown commands. Catalog check stays in 7.7.
+- Merges duplicate host-log sections 13.4 / 13.5. Does not drop deploy chapters.
+
 ## 0.1.6-draft — 2026-10-17
 
 Workload cluster name is optional, not a required fixed string.
