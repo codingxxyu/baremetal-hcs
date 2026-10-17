@@ -3,12 +3,12 @@
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: MachineInventoryPool
 metadata:
-  name: hcs-workloadcluster-arm64-worker-pool
+  name: <WORKLOAD_CLUSTER_NAME>-arm64-worker-pool
   namespace: cpaas-system
   labels:
-    cpaas.io/cluster-name: hcs-workloadcluster
+    cpaas.io/cluster-name: <WORKLOAD_CLUSTER_NAME>
 spec:
-  clusterName: hcs-workloadcluster
+  clusterName: <WORKLOAD_CLUSTER_NAME>
   machineInventories:
     - name: <WORKLOAD_ARM64_WORKER_INVENTORY>
-      hostname: hcs-workloadcluster-arm64-worker-1
+      hostname: <WORKLOAD_CLUSTER_NAME>-arm64-worker-1

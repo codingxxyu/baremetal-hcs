@@ -2,12 +2,12 @@
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: BaremetalMachineTemplate
 metadata:
-  name: hcs-workloadcluster-control-plane-template
+  name: <WORKLOAD_CLUSTER_NAME>-control-plane-template
   namespace: cpaas-system
   labels:
-    cpaas.io/cluster-name: hcs-workloadcluster
+    cpaas.io/cluster-name: <WORKLOAD_CLUSTER_NAME>
 spec:
   template:
     spec:
       machineInventoryPoolRef:
-        name: hcs-workloadcluster-control-plane-pool
+        name: <WORKLOAD_CLUSTER_NAME>-control-plane-pool

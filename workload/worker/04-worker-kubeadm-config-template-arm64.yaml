@@ -5,10 +5,10 @@
 apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
 kind: KubeadmConfigTemplate
 metadata:
-  name: hcs-workloadcluster-arm64-worker-kubeadm-config
+  name: <WORKLOAD_CLUSTER_NAME>-arm64-worker-kubeadm-config
   namespace: cpaas-system
   labels:
-    cpaas.io/cluster-name: hcs-workloadcluster
+    cpaas.io/cluster-name: <WORKLOAD_CLUSTER_NAME>
 spec:
   template:
     spec:

@@ -4,16 +4,16 @@
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: MachineInventoryPool
 metadata:
-  name: hcs-workloadcluster-control-plane-pool
+  name: <WORKLOAD_CLUSTER_NAME>-control-plane-pool
   namespace: cpaas-system
   labels:
-    cpaas.io/cluster-name: hcs-workloadcluster
+    cpaas.io/cluster-name: <WORKLOAD_CLUSTER_NAME>
 spec:
-  clusterName: hcs-workloadcluster
+  clusterName: <WORKLOAD_CLUSTER_NAME>
   machineInventories:
     - name: <WORKLOAD_CP_INVENTORY_1>
-      hostname: hcs-workloadcluster-cp-1
+      hostname: <WORKLOAD_CLUSTER_NAME>-cp-1
     - name: <WORKLOAD_CP_INVENTORY_2>
-      hostname: hcs-workloadcluster-cp-2
+      hostname: <WORKLOAD_CLUSTER_NAME>-cp-2
     - name: <WORKLOAD_CP_INVENTORY_3>
-      hostname: hcs-workloadcluster-cp-3
+      hostname: <WORKLOAD_CLUSTER_NAME>-cp-3

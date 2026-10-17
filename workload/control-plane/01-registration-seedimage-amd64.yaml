@@ -1,24 +1,24 @@
 # APPLY-ON: finished Global   kubeconfig: global-kubeconfig
 # ISO / bare-metal path. Do not apply together with 01-registration-amd64.yaml
-# (same MachineRegistration name: hcs-workloadcluster-registration).
+# (same MachineRegistration name: <WORKLOAD_CLUSTER_NAME>-registration).
 # Apply on the finished Global cluster after providers and OS catalog are Ready.
 # Do not reuse the Global control-plane ISO. Cluster name must not be "global".
 # Gate: status.downloadURL non-empty. spec.size 20Gi needs default StorageClass on Global.
 apiVersion: elemental.cattle.io/v1beta1
 kind: MachineRegistration
 metadata:
-  name: hcs-workloadcluster-registration
+  name: <WORKLOAD_CLUSTER_NAME>-registration
   namespace: cpaas-system
   labels:
     app.kubernetes.io/part-of: cluster-api-provider-baremetal
-    cpaas.io/cluster-name: hcs-workloadcluster
+    cpaas.io/cluster-name: <WORKLOAD_CLUSTER_NAME>
 spec:
-  machineName: "hcs-workloadcluster-${System Information/UUID}"
+  machineName: "<WORKLOAD_CLUSTER_NAME>-${System Information/UUID}"
   machineInventoryLabels:
     app.kubernetes.io/part-of: cluster-api-provider-baremetal
     pool.baremetal.alauda.io/eligible: "true"
     elemental.cattle.io/serial-number: "${System Information/Serial Number}"
-    cpaas.io/cluster-name: hcs-workloadcluster
+    cpaas.io/cluster-name: <WORKLOAD_CLUSTER_NAME>
     os.baremetal.alauda.io/id: alaudaos.k.25
     os.baremetal.alauda.io/arch: "${Runtime/Architecture}"
   machineInventoryAnnotations:
@@ -37,18 +37,18 @@ spec:
 apiVersion: elemental.cattle.io/v1beta1
 kind: SeedImage
 metadata:
-  name: hcs-workloadcluster-registration-iso
+  name: <WORKLOAD_CLUSTER_NAME>-registration-iso
   namespace: cpaas-system
   labels:
     app.kubernetes.io/part-of: cluster-api-provider-baremetal
-    cpaas.io/cluster-name: hcs-workloadcluster
+    cpaas.io/cluster-name: <WORKLOAD_CLUSTER_NAME>
 spec:
   type: iso
   baseImage: <PLATFORM_REGISTRY>:11443/tkestack/kubeos-iso:<K25_AMD64_IMAGE_TAG>
   registrationRef:
     apiVersion: elemental.cattle.io/v1beta1
     kind: MachineRegistration
-    name: hcs-workloadcluster-registration
+    name: <WORKLOAD_CLUSTER_NAME>-registration
     namespace: cpaas-system
   targetPlatform: linux/amd64
   size: 20Gi

@@ -8,7 +8,7 @@
 |---|---|
 | Global | 3 台 amd64 控制面，无 Global Worker |
 | Workload | 3 台 amd64 控制面 + 1 台 arm64 Worker |
-| 集群名 | Global 必须为 `global`；Workload 必须为 `hcs-workloadcluster` |
+| 集群名 | Global 必须为 `global`。Workload 名可选，对照字段 `workload_cluster_name`，YAML 占位符 `<WORKLOAD_CLUSTER_NAME>`；本场示例为 `hcs-workloadcluster`。禁止使用 `global`，且同一场所有 Workload 对象必须用同一个名字 |
 | 滚动 | 控制面与 Worker 的 `maxSurge` 一律为 `0` |
 | 负载均衡 | External VIP；不要配置 VRID / Internal LB |
 
@@ -152,6 +152,7 @@ HCS 另加：
 | `<PLATFORM_HOST>` | 成品 Global provider、installer console |
 | `<PLATFORM_REGISTRY>` | installer registry、成品 Global provider、Workload 全部 registry。installer Success 之后才向这里推 |
 | `<GLOBAL_CONTROL_PLANE_VIP>` | 引导集群 Bare Metal provider、Global BaremetalCluster、Global KCP etcd SAN、installer `features.ha.vip` |
+| `<WORKLOAD_CLUSTER_NAME>` | Workload Cluster / BaremetalCluster / KCP / pool / Registration / SeedImage / MachineDeployment 的名字前缀。对照字段 `topology.workload_cluster_name`。本场示例 `hcs-workloadcluster`，下一场可另选，但不能是 `global`，且必须整包替换 |
 | `<WORKLOAD_CONTROL_PLANE_VIP>` | Workload BaremetalCluster、Workload KCP etcd SAN |
 | `<NETWORK_DEVICE>` | 两个 BaremetalCluster 的 `spec.networkDevice`。Pool 条目不要写该字段 |
 | `<GLOBAL_POD_CIDR>` `<GLOBAL_SERVICE_CIDR>` `<GLOBAL_KUBE_OVN_JOIN_CIDR>` | Global Cluster、installer JSON |
@@ -851,6 +852,8 @@ ConfigMap 对象不存在时，先查 `08` 是否 Ready。两个 key 都正确�
 
 本章全部使用 `$GLOBAL_KUBECONFIG`。KIND 已不再使用。不要复用 Global 的 Registration URL 或 cloud-init。不要 apply SeedImage。
 
+先把 `workload/` 下所有 YAML 的 `<WORKLOAD_CLUSTER_NAME>` 换成对照文件里的名字（本场示例 `hcs-workloadcluster`）。禁止写成 `global`。同一场只用一个名字。
+
 ```bash
 export KUBECONFIG="$GLOBAL_KUBECONFIG"
 kubectl get nodes
@@ -859,7 +862,7 @@ kubectl -n cpaas-system get configmap elemental-image-catalog -o yaml
 
 ### 8.1 创建 Workload 控制面 Registration
 
-文件：`workload/control-plane/01-registration-amd64.yaml`。对象名 `hcs-workloadcluster-registration`。不要 apply 同目录的 `01-registration-seedimage-amd64.yaml`。
+文件：`workload/control-plane/01-registration-amd64.yaml`。对象名 `<WORKLOAD_CLUSTER_NAME>-registration`。不要 apply 同目录的 `01-registration-seedimage-amd64.yaml`。
 
 | 变量 | 位置 |
 |---|---|
@@ -871,11 +874,11 @@ kubectl -n cpaas-system get configmap elemental-image-catalog -o yaml
 ```bash
 grep -nE '<[^>]+>' "$PACK_DIR/workload/control-plane/01-registration-amd64.yaml"
 kubectl apply -f "$PACK_DIR/workload/control-plane/01-registration-amd64.yaml"
-kubectl -n cpaas-system get machineregistration hcs-workloadcluster-registration -o yaml
+kubectl -n cpaas-system get machineregistration <WORKLOAD_CLUSTER_NAME>-registration -o yaml
 ```
 
 ```bash
-URL=$(kubectl -n cpaas-system get machineregistration hcs-workloadcluster-registration \
+URL=$(kubectl -n cpaas-system get machineregistration <WORKLOAD_CLUSTER_NAME>-registration \
   -o jsonpath='{.status.registrationURL}')
 test -n "$URL"
 curl -fsSk "$URL" > /root/registration-config-workload-cp.yaml
@@ -904,7 +907,7 @@ kubectl -n cpaas-system get machineinventory -o wide
 | `<WORKLOAD_CP_INVENTORY_2>` | `spec.machineInventories[1].name` |
 | `<WORKLOAD_CP_INVENTORY_3>` | `spec.machineInventories[2].name` |
 
-hostname 保持 `hcs-workloadcluster-cp-1/2/3`。三个 name 不能重复。若 API 报 `spec.machineInventories[2].name: Duplicate value`，只改第三个 name，不要删 Cluster。
+hostname 保持 `<WORKLOAD_CLUSTER_NAME>-cp-1/2/3`。三个 name 不能重复。若 API 报 `spec.machineInventories[2].name: Duplicate value`，只改第三个 name，不要删 Cluster。
 
 ```bash
 kubectl apply -f "$PACK_DIR/workload/control-plane/02-control-plane-pool.yaml"
@@ -926,7 +929,7 @@ kubectl apply -f "$PACK_DIR/workload/control-plane/03-baremetal-cluster.yaml"
 
 ### 8.6 `workload/control-plane/04-control-plane-machine-template.yaml`
 
-无变量。确认 `machineInventoryPoolRef.name` 为 `hcs-workloadcluster-control-plane-pool`。
+对象名与 `machineInventoryPoolRef.name` 都带 `<WORKLOAD_CLUSTER_NAME>`。确认 pool 名为 `<WORKLOAD_CLUSTER_NAME>-control-plane-pool`。
 
 ```bash
 kubectl apply -f "$PACK_DIR/workload/control-plane/04-control-plane-machine-template.yaml"
@@ -956,9 +959,9 @@ kubectl apply -f "$PACK_DIR/workload/control-plane/05-cluster.yaml"
 
 ```bash
 kubectl apply -f "$PACK_DIR/workload/control-plane/06-kubeadm-control-plane.yaml"
-kubectl get cluster hcs-workloadcluster
-kubectl get kubeadmcontrolplane hcs-workloadcluster-control-plane
-kubectl get machines -l cluster.x-k8s.io/cluster-name=hcs-workloadcluster -o wide
+kubectl get cluster <WORKLOAD_CLUSTER_NAME>
+kubectl get kubeadmcontrolplane <WORKLOAD_CLUSTER_NAME>-control-plane
+kubectl get machines -l cluster.x-k8s.io/cluster-name=<WORKLOAD_CLUSTER_NAME> -o wide
 ```
 
 ---
@@ -969,7 +972,7 @@ kubectl get machines -l cluster.x-k8s.io/cluster-name=hcs-workloadcluster -o wid
 
 ### 9.1 创建 ARM Worker Registration
 
-文件：`workload/worker/01-registration-arm64.yaml`。对象名 `hcs-workloadcluster-arm64-worker-registration`。不要 apply 同目录的 `01-registration-seedimage-arm64.yaml`。
+文件：`workload/worker/01-registration-arm64.yaml`。对象名 `<WORKLOAD_CLUSTER_NAME>-arm64-worker-registration`。不要 apply 同目录的 `01-registration-seedimage-arm64.yaml`。
 
 | 变量 | 位置 |
 |---|---|
@@ -979,12 +982,12 @@ kubectl get machines -l cluster.x-k8s.io/cluster-name=hcs-workloadcluster -o wid
 ```bash
 grep -nE '<[^>]+>' "$PACK_DIR/workload/worker/01-registration-arm64.yaml"
 kubectl apply -f "$PACK_DIR/workload/worker/01-registration-arm64.yaml"
-kubectl -n cpaas-system get machineregistration hcs-workloadcluster-arm64-worker-registration -o yaml
+kubectl -n cpaas-system get machineregistration <WORKLOAD_CLUSTER_NAME>-arm64-worker-registration -o yaml
 ```
 
 ```bash
 URL=$(kubectl -n cpaas-system get machineregistration \
-  hcs-workloadcluster-arm64-worker-registration \
+  <WORKLOAD_CLUSTER_NAME>-arm64-worker-registration \
   -o jsonpath='{.status.registrationURL}')
 test -n "$URL"
 curl -fsSk "$URL" > /root/registration-config-workload-arm.yaml
@@ -1009,7 +1012,7 @@ kubectl -n cpaas-system get machineinventory -o wide
 |---|---|
 | `<WORKLOAD_ARM64_WORKER_INVENTORY>` | `spec.machineInventories[0].name` |
 
-hostname 保持 `hcs-workloadcluster-arm64-worker-1`。
+hostname 保持 `<WORKLOAD_CLUSTER_NAME>-arm64-worker-1`。
 
 ```bash
 kubectl apply -f "$PACK_DIR/workload/worker/02-worker-pool-arm64.yaml"
@@ -1017,7 +1020,7 @@ kubectl apply -f "$PACK_DIR/workload/worker/02-worker-pool-arm64.yaml"
 
 ### 9.4 `workload/worker/03-worker-machine-template-arm64.yaml`
 
-无变量。确认 `machineInventoryPoolRef.name` 为 `hcs-workloadcluster-arm64-worker-pool`。
+对象名与 `machineInventoryPoolRef.name` 都带 `<WORKLOAD_CLUSTER_NAME>`。确认 pool 名为 `<WORKLOAD_CLUSTER_NAME>-arm64-worker-pool`。
 
 ```bash
 kubectl apply -f "$PACK_DIR/workload/worker/03-worker-machine-template-arm64.yaml"
@@ -1044,7 +1047,7 @@ kubectl apply -f "$PACK_DIR/workload/worker/04-worker-kubeadm-config-template-ar
 
 ### 9.6 `workload/worker/05-worker-machine-deployment-arm64.yaml`
 
-无变量。固定值：
+对象名、`clusterName`、selector 均带 `<WORKLOAD_CLUSTER_NAME>`。固定值：
 
 ```text
 replicas        1
@@ -1055,7 +1058,7 @@ version         v1.35.6-acp.9
 
 ```bash
 kubectl apply -f "$PACK_DIR/workload/worker/05-worker-machine-deployment-arm64.yaml"
-kubectl get machines -l cluster.x-k8s.io/cluster-name=hcs-workloadcluster -o wide
+kubectl get machines -l cluster.x-k8s.io/cluster-name=<WORKLOAD_CLUSTER_NAME> -o wide
 ```
 
 本场景到此结束。运维见第 13 章。
@@ -1215,7 +1218,7 @@ global/control-plane/06-kubeadm-control-plane.yaml
 
 ## 11. Workload：amd64 控制面物理机
 
-本章全部使用 `$GLOBAL_KUBECONFIG`。KIND 已不再使用。不要复用 Global 的 ISO。Global 上要有默认 StorageClass。
+本章全部使用 `$GLOBAL_KUBECONFIG`。KIND 已不再使用。不要复用 Global 的 ISO。Global 上要有默认 StorageClass。`<WORKLOAD_CLUSTER_NAME>` 与第 8 章同一套规则。
 
 ```bash
 export KUBECONFIG="$GLOBAL_KUBECONFIG"
@@ -1243,7 +1246,7 @@ os id           alaudaos.k.25
 kubectl apply -f "$PACK_DIR/workload/control-plane/01-registration-seedimage-amd64.yaml"
 ISO_URL=""
 for i in $(seq 1 60); do
-  ISO_URL=$(kubectl -n cpaas-system get seedimage hcs-workloadcluster-registration-iso \
+  ISO_URL=$(kubectl -n cpaas-system get seedimage <WORKLOAD_CLUSTER_NAME>-registration-iso \
     -o jsonpath='{.status.downloadURL}' 2>/dev/null || true)
   [ -n "$ISO_URL" ] && break
   echo "waiting downloadURL ($i/60)..."
@@ -1325,7 +1328,7 @@ kubectl apply -f "$PACK_DIR/workload/worker/01-registration-seedimage-arm64.yaml
 ISO_URL=""
 for i in $(seq 1 60); do
   ISO_URL=$(kubectl -n cpaas-system get seedimage \
-    hcs-workloadcluster-arm64-worker-registration-iso \
+    <WORKLOAD_CLUSTER_NAME>-arm64-worker-registration-iso \
     -o jsonpath='{.status.downloadURL}' 2>/dev/null || true)
   [ -n "$ISO_URL" ] && break
   echo "waiting downloadURL ($i/60)..."
@@ -1418,7 +1421,7 @@ kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
 
 ```bash
 kubectl --kubeconfig "$GLOBAL_KUBECONFIG" \
-  -n cpaas-system delete cluster hcs-workloadcluster
+  -n cpaas-system delete cluster <WORKLOAD_CLUSTER_NAME>
 ```
 
 等待级联对象清理完成后，再按顺序 apply：

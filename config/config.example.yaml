@@ -10,7 +10,7 @@
 
 pack:
   name: baremetal-hcs
-  version: "0.1.5-draft"
+  version: "0.1.6-draft"
   status: draft
   acp_version: v4.4.1
   namespace: cpaas-system
@@ -23,7 +23,7 @@ topology:
   global_control_plane_architecture: amd64
   global_control_plane_replicas: 3
   global_worker_replicas: 0
-  workload_cluster_name: hcs-workloadcluster   # must not be "global"
+  workload_cluster_name: hcs-workloadcluster   # example only. Replace <WORKLOAD_CLUSTER_NAME> in every workload YAML. Must not be "global". Keep one name across all workload objects.
   workload_control_plane_architecture: amd64
   workload_control_plane_replicas: 3
   workload_worker_architecture: arm64
@@ -153,16 +153,16 @@ inventory:
     hostname: global-cp-3
   workload_cp_1:
     name: <WORKLOAD_CP_INVENTORY_1>
-    hostname: hcs-workloadcluster-cp-1
+    hostname: <WORKLOAD_CLUSTER_NAME>-cp-1
   workload_cp_2:
     name: <WORKLOAD_CP_INVENTORY_2>
-    hostname: hcs-workloadcluster-cp-2
+    hostname: <WORKLOAD_CLUSTER_NAME>-cp-2
   workload_cp_3:
     name: <WORKLOAD_CP_INVENTORY_3>
-    hostname: hcs-workloadcluster-cp-3
+    hostname: <WORKLOAD_CLUSTER_NAME>-cp-3
   workload_arm64_worker_1:
     name: <WORKLOAD_ARM64_WORKER_INVENTORY>
-    hostname: hcs-workloadcluster-arm64-worker-1
+    hostname: <WORKLOAD_CLUSTER_NAME>-arm64-worker-1
 
 # Physical ISO scene only. Check on each host; do not write WWN into shared YAML.
 hosts:

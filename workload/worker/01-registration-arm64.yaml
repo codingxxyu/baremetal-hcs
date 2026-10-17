@@ -1,23 +1,23 @@
 # APPLY-ON: finished Global   kubeconfig: global-kubeconfig
 # HCS qcow2 path only. Do not apply together with 01-registration-seedimage-arm64.yaml.
-# Same MachineRegistration name as the ISO file: hcs-workloadcluster-arm64-worker-registration.
+# Same MachineRegistration name as the ISO file: <WORKLOAD_CLUSTER_NAME>-arm64-worker-registration.
 # install.device is /dev/vda (HCS virtio). Physical ISO files keep /dev/elemental-install-target.
 # No SeedImage. Gate is status.registrationURL, then curl the config into cloud-init.
 apiVersion: elemental.cattle.io/v1beta1
 kind: MachineRegistration
 metadata:
-  name: hcs-workloadcluster-arm64-worker-registration
+  name: <WORKLOAD_CLUSTER_NAME>-arm64-worker-registration
   namespace: cpaas-system
   labels:
     app.kubernetes.io/part-of: cluster-api-provider-baremetal
-    cpaas.io/cluster-name: hcs-workloadcluster
+    cpaas.io/cluster-name: <WORKLOAD_CLUSTER_NAME>
 spec:
-  machineName: "hcs-workloadcluster-arm64-worker-${System Information/UUID}"
+  machineName: "<WORKLOAD_CLUSTER_NAME>-arm64-worker-${System Information/UUID}"
   machineInventoryLabels:
     app.kubernetes.io/part-of: cluster-api-provider-baremetal
     pool.baremetal.alauda.io/eligible: "true"
     elemental.cattle.io/serial-number: "${System Information/Serial Number}"
-    cpaas.io/cluster-name: hcs-workloadcluster
+    cpaas.io/cluster-name: <WORKLOAD_CLUSTER_NAME>
     os.baremetal.alauda.io/id: alaudaos.k.25
     os.baremetal.alauda.io/arch: "${Runtime/Architecture}"
   machineInventoryAnnotations:
