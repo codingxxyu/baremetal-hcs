@@ -23,7 +23,7 @@ topology:
   global_control_plane_architecture: amd64
   global_control_plane_replicas: 3
   global_worker_replicas: 0
-  workload_cluster_name: hcs-workloadcluster   # example only. Replace <WORKLOAD_CLUSTER_NAME> in every workload YAML. Must not be "global". Keep one name across all workload objects.
+  workload_cluster_name: workloadcluster   # example only. Replace <WORKLOAD_CLUSTER_NAME> in every workload YAML. Must not be "global". Keep one name across all workload objects.
   workload_control_plane_architecture: amd64
   workload_control_plane_replicas: 3
   workload_worker_architecture: arm64

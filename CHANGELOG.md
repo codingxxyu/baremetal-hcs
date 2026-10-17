@@ -2,10 +2,10 @@
 
 ## 0.1.6-draft — 2026-10-17
 
-Workload cluster name is optional, not a fixed `hcs-workloadcluster`.
+Workload cluster name is optional, not a required fixed string.
 
 - YAML under `workload/` uses `<WORKLOAD_CLUSTER_NAME>` as the Cluster / BaremetalCluster / KCP / pool / Registration / SeedImage / MachineDeployment name prefix.
-- `config.example.yaml` keeps `hcs-workloadcluster` as the example value. The next site may choose another name as long as it is not `global` and the same name is used on every Workload object.
+- `config.example.yaml` example value is `workloadcluster`. The next site may choose another name as long as it is not `global` and the same name is used on every Workload object.
 - README chapter 0 and the Workload apply commands follow the placeholder.
 
 ## 0.1.5-draft — 2026-10-17

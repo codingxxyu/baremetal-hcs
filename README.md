@@ -8,7 +8,7 @@
 |---|---|
 | Global | 3 台 amd64 控制面，无 Global Worker |
 | Workload | 3 台 amd64 控制面 + 1 台 arm64 Worker |
-| 集群名 | Global 必须为 `global`。Workload 名可选，对照字段 `workload_cluster_name`，YAML 占位符 `<WORKLOAD_CLUSTER_NAME>`；本场示例为 `hcs-workloadcluster`。禁止使用 `global`，且同一场所有 Workload 对象必须用同一个名字 |
+| 集群名 | Global 必须为 `global`。Workload 名可选，对照字段 `workload_cluster_name`，YAML 占位符 `<WORKLOAD_CLUSTER_NAME>`；本场示例为 `workloadcluster`。禁止使用 `global`，且同一场所有 Workload 对象必须用同一个名字 |
 | 滚动 | 控制面与 Worker 的 `maxSurge` 一律为 `0` |
 | 负载均衡 | External VIP；不要配置 VRID / Internal LB |
 
@@ -152,7 +152,7 @@ HCS 另加：
 | `<PLATFORM_HOST>` | 成品 Global provider、installer console |
 | `<PLATFORM_REGISTRY>` | installer registry、成品 Global provider、Workload 全部 registry。installer Success 之后才向这里推 |
 | `<GLOBAL_CONTROL_PLANE_VIP>` | 引导集群 Bare Metal provider、Global BaremetalCluster、Global KCP etcd SAN、installer `features.ha.vip` |
-| `<WORKLOAD_CLUSTER_NAME>` | Workload Cluster / BaremetalCluster / KCP / pool / Registration / SeedImage / MachineDeployment 的名字前缀。对照字段 `topology.workload_cluster_name`。本场示例 `hcs-workloadcluster`，下一场可另选，但不能是 `global`，且必须整包替换 |
+| `<WORKLOAD_CLUSTER_NAME>` | Workload Cluster / BaremetalCluster / KCP / pool / Registration / SeedImage / MachineDeployment 的名字前缀。对照字段 `topology.workload_cluster_name`。本场示例 `workloadcluster`，下一场可另选，但不能是 `global`，且必须整包替换 |
 | `<WORKLOAD_CONTROL_PLANE_VIP>` | Workload BaremetalCluster、Workload KCP etcd SAN |
 | `<NETWORK_DEVICE>` | 两个 BaremetalCluster 的 `spec.networkDevice`。Pool 条目不要写该字段 |
 | `<GLOBAL_POD_CIDR>` `<GLOBAL_SERVICE_CIDR>` `<GLOBAL_KUBE_OVN_JOIN_CIDR>` | Global Cluster、installer JSON |
@@ -852,7 +852,7 @@ ConfigMap 对象不存在时，先查 `08` 是否 Ready。两个 key 都正确�
 
 本章全部使用 `$GLOBAL_KUBECONFIG`。KIND 已不再使用。不要复用 Global 的 Registration URL 或 cloud-init。不要 apply SeedImage。
 
-先把 `workload/` 下所有 YAML 的 `<WORKLOAD_CLUSTER_NAME>` 换成对照文件里的名字（本场示例 `hcs-workloadcluster`）。禁止写成 `global`。同一场只用一个名字。
+先把 `workload/` 下所有 YAML 的 `<WORKLOAD_CLUSTER_NAME>` 换成对照文件里的名字（本场示例 `workloadcluster`）。禁止写成 `global`。同一场只用一个名字。
 
 ```bash
 export KUBECONFIG="$GLOBAL_KUBECONFIG"
