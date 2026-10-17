@@ -10,7 +10,7 @@
 
 pack:
   name: baremetal-hcs
-  version: "0.1.7-draft"
+  version: "0.1.8-draft"
   status: draft
   acp_version: v4.4.1
   namespace: cpaas-system

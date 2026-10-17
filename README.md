@@ -317,6 +317,8 @@ kubeos-iso:baremetal
 
 最终 tag 以本次 `images ls` 和现场 archive 说明为准，填入 `config.local.yaml` 的 `<K25_AMD64_IMAGE_TAG>`，再替换 YAML。不要把 `baremetal` 写进 YAML。HCS 场景也要推 `kubeos-iso`：archive 内两份一起导入，catalog / rootfs 都使用这份 tag。
 
+下面 tag 命令假定短名是 `kubeos-rootfs:baremetal`。若 `images ls -q` 打出的是 `docker.io/tkestack/kubeos-rootfs:baremetal` 这类全名，把 `${repo}:baremetal` 换成 `images ls` 里的完整名字，不要猜。
+
 ```bash
 export OS_TAG=<K25_AMD64_IMAGE_TAG>
 for repo in kubeos-rootfs kubeos-iso; do
@@ -424,11 +426,17 @@ kubectl apply -f "$PACK_DIR/global/control-plane/01-registration-amd64.yaml"
 kubectl -n cpaas-system get machineregistration global-registration -o yaml
 ```
 
-`status.registrationURL` 非空后再 curl：
+`status.registrationURL` 非空后再 curl。apply 后 URL 不会立刻出现：
 
 ```bash
-URL=$(kubectl -n cpaas-system get machineregistration global-registration \
-  -o jsonpath='{.status.registrationURL}')
+URL=""
+for i in $(seq 1 60); do
+  URL=$(kubectl -n cpaas-system get machineregistration global-registration \
+    -o jsonpath='{.status.registrationURL}' 2>/dev/null || true)
+  [ -n "$URL" ] && break
+  echo "waiting registrationURL ($i/60)..."
+  sleep 10
+done
 test -n "$URL"
 curl -fsSk "$URL" > /root/registration-config.yaml
 chmod 600 /root/registration-config.yaml
@@ -568,9 +576,15 @@ kubectl -n cpaas-system get machine,baremetalmachine -o wide
 
 ### 5.9 抽出 global-kubeconfig
 
-此时仍不得拆除 KIND，也尚未 POST installer。
+此时仍不得拆除 KIND，也尚未 POST installer。Secret 要等第一台控制面起来之后才有：
 
 ```bash
+for i in $(seq 1 60); do
+  kubectl -n cpaas-system get secret global-kubeconfig >/dev/null 2>&1 && break
+  echo "waiting global-kubeconfig secret ($i/60)..."
+  sleep 15
+done
+kubectl -n cpaas-system get secret global-kubeconfig >/dev/null
 kubectl -n cpaas-system get secret global-kubeconfig \
   -o jsonpath='{.data.value}' | base64 -d > "$PACK_DIR/global-kubeconfig"
 chmod 600 "$PACK_DIR/global-kubeconfig"
@@ -639,6 +653,10 @@ cp "$PACK_DIR/global/bootstrap/05-installer-config.example.json" \
 
 ```bash
 python3 -m json.tool /root/installer-config.json >/dev/null
+if grep -nE '<[^>]+>' /root/installer-config.json; then
+  echo "unreplaced placeholder in installer JSON"
+  exit 1
+fi
 ```
 
 `basic.password` / `registry.password` 应为字母数字和 `=`，不是刚输入的明文。
@@ -856,8 +874,10 @@ kubectl --kubeconfig "$GLOBAL_KUBECONFIG" -n cpaas-system \
   get cluster,baremetalcluster global -o \
   custom-columns='KIND:.kind,REG:.metadata.annotations.cpaas\.io/registry-address'
 export PATH="/root/installer/res/amd64:${PATH}"
-kind delete cluster --name minialauda
+KUBECONFIG="$BOOTSTRAP_KUBECONFIG" kind delete cluster --name minialauda
 ```
+
+`kind delete` 必须带 `$BOOTSTRAP_KUBECONFIG`。第 7.5 节若已 `export KUBECONFIG="$GLOBAL_KUBECONFIG"`，不要用那份文件去删 KIND，否则会改坏成品 kubeconfig。
 
 `kind` 不在 PATH 且容器还在时：
 
@@ -897,8 +917,14 @@ kubectl -n cpaas-system get machineregistration <WORKLOAD_CLUSTER_NAME>-registra
 ```
 
 ```bash
-URL=$(kubectl -n cpaas-system get machineregistration <WORKLOAD_CLUSTER_NAME>-registration \
-  -o jsonpath='{.status.registrationURL}')
+URL=""
+for i in $(seq 1 60); do
+  URL=$(kubectl -n cpaas-system get machineregistration <WORKLOAD_CLUSTER_NAME>-registration \
+    -o jsonpath='{.status.registrationURL}' 2>/dev/null || true)
+  [ -n "$URL" ] && break
+  echo "waiting registrationURL ($i/60)..."
+  sleep 10
+done
 test -n "$URL"
 curl -fsSk "$URL" > /root/registration-config-workload-cp.yaml
 chmod 600 /root/registration-config-workload-cp.yaml
@@ -980,9 +1006,9 @@ kubectl apply -f "$PACK_DIR/workload/control-plane/05-cluster.yaml"
 
 ```bash
 kubectl apply -f "$PACK_DIR/workload/control-plane/06-kubeadm-control-plane.yaml"
-kubectl get cluster <WORKLOAD_CLUSTER_NAME>
-kubectl get kubeadmcontrolplane <WORKLOAD_CLUSTER_NAME>-control-plane
-kubectl get machines -l cluster.x-k8s.io/cluster-name=<WORKLOAD_CLUSTER_NAME> -o wide
+kubectl -n cpaas-system get cluster <WORKLOAD_CLUSTER_NAME>
+kubectl -n cpaas-system get kubeadmcontrolplane <WORKLOAD_CLUSTER_NAME>-control-plane
+kubectl -n cpaas-system get machines -l cluster.x-k8s.io/cluster-name=<WORKLOAD_CLUSTER_NAME> -o wide
 ```
 
 ---
@@ -1007,9 +1033,15 @@ kubectl -n cpaas-system get machineregistration <WORKLOAD_CLUSTER_NAME>-arm64-wo
 ```
 
 ```bash
-URL=$(kubectl -n cpaas-system get machineregistration \
-  <WORKLOAD_CLUSTER_NAME>-arm64-worker-registration \
-  -o jsonpath='{.status.registrationURL}')
+URL=""
+for i in $(seq 1 60); do
+  URL=$(kubectl -n cpaas-system get machineregistration \
+    <WORKLOAD_CLUSTER_NAME>-arm64-worker-registration \
+    -o jsonpath='{.status.registrationURL}' 2>/dev/null || true)
+  [ -n "$URL" ] && break
+  echo "waiting registrationURL ($i/60)..."
+  sleep 10
+done
 test -n "$URL"
 curl -fsSk "$URL" > /root/registration-config-workload-arm.yaml
 chmod 600 /root/registration-config-workload-arm.yaml
@@ -1081,7 +1113,7 @@ version         v1.35.6-acp.9
 
 ```bash
 kubectl apply -f "$PACK_DIR/workload/worker/05-worker-machine-deployment-arm64.yaml"
-kubectl get machines -l cluster.x-k8s.io/cluster-name=<WORKLOAD_CLUSTER_NAME> -o wide
+kubectl -n cpaas-system get machines -l cluster.x-k8s.io/cluster-name=<WORKLOAD_CLUSTER_NAME> -o wide
 ```
 
 本场景到此结束。运维见第 13 章。

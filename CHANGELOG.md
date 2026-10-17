@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.8-draft — 2026-10-17
+
+Field-command hardening. YAML objects are unchanged.
+
+- Wait for MachineRegistration `status.registrationURL` and for Secret `global-kubeconfig` before curl / extract.
+- Workload status commands use `-n cpaas-system`.
+- `kind delete` uses `$BOOTSTRAP_KUBECONFIG` so it cannot rewrite the finished Global kubeconfig.
+- Reject leftover `<...>` in installer JSON after `json.tool`.
+- Note that `ctr images tag` source names must match `images ls -q`.
+
 ## 0.1.7-draft — 2026-10-17
 
 Field-handbook structure pass. YAML objects are unchanged.
